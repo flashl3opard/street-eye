@@ -16,40 +16,33 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
-  DATA_URL, POLL_INTERVAL_MS,
+  DEFAULT_DATA_URL, POLL_INTERVAL_MS,
   SIMULATED_READINGS, mergeLampData,
 } from '../lib/lampData';
 import { appendLog, makeLogEntry, subscribeToLogs } from '../lib/firebase';
 
 const SimulationContext = createContext(null);
 
-/**
- * Build the initial lamp histories using the simulated baseline readings.
- * Each lamp starts with a pre-filled 30-sample history at its steady-state
- * current so the chart isn't flat-zero on first open.
- */
-function buildInitialHistories() {
-  const histories = {};
-  SIMULATED_READINGS.forEach(r => {
-    // Pre-populate with natural-looking values around the baseline current
-    const base = r.current || 0;
-    histories[r.id] = Array.from({ length: 30 }, (_, i) => {
-      // Gentle sine wave so the chart looks alive even before simulation
-      return Math.max(0, base + Math.sin(i * 0.4) * 0.05 + (Math.random() - 0.5) * 0.04);
-    });
-  });
-  return histories;
-}
+const SETTINGS_STORAGE_KEY = 'street-eye:settings';
+const SETTINGS_DEFAULTS = {
+  hardwareUrl: DEFAULT_DATA_URL,
+  pollIntervalMs: POLL_INTERVAL_MS,
+};
 
-function buildInitialLdrHistories() {
-  const histories = {};
-  SIMULATED_READINGS.forEach(r => {
-    const base = r.ldr || 0;
-    histories[r.id] = Array.from({ length: 30 }, (_, i) => {
-      return Math.max(0, Math.min(100, base + Math.sin(i * 0.35) * 4 + (Math.random() - 0.5) * 3));
-    });
-  });
-  return histories;
+/**
+ * Load the user's persisted settings, falling back to defaults for any
+ * field that isn't present (or if localStorage is unavailable).
+ */
+function loadSettings() {
+  if (typeof window === 'undefined') return SETTINGS_DEFAULTS;
+  try {
+    const raw = window.localStorage.getItem(SETTINGS_STORAGE_KEY);
+    if (!raw) return SETTINGS_DEFAULTS;
+    const parsed = JSON.parse(raw);
+    return { ...SETTINGS_DEFAULTS, ...parsed };
+  } catch {
+    return SETTINGS_DEFAULTS;
+  }
 }
 
 function isAlertEntry(entry) {
@@ -64,6 +57,73 @@ export function SimulationProvider({ children }) {
   const [uptime, setUptime] = useState(0);
   const [eventLog, setEventLog] = useState([]);
   const [simulating, setSimulating] = useState(false);
+  /**
+   * bootState — high-level connection lifecycle the UI can render against.
+   *   'connecting'   : initial mount, no fetch attempt has resolved yet
+   *   'connected'    : real hardware responded successfully
+   *   'disconnected' : a fetch attempt failed (and we're not simulating)
+   *   'simulating'   : user toggled simulation; data is synthetic but flowing
+   * The dialog/dashes UX keys off this rather than `isOnline` directly so
+   * we don't flash a "not connected" dialog on the first paint.
+   */
+  const [bootState, setBootState] = useState('connecting');
+
+  /**
+   * settings — user-tunable runtime config (persisted to localStorage).
+   * Hydrated lazily on the client; SSR sees the env-var defaults.
+   */
+  const [settings, setSettings] = useState(SETTINGS_DEFAULTS);
+  useEffect(() => {
+    setSettings(loadSettings());
+  }, []);
+
+  const updateSettings = useCallback((patch) => {
+    setSettings(prev => {
+      const next = { ...prev, ...patch };
+      try {
+        window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(next));
+      } catch {
+        // ignore — settings still apply for the current session
+      }
+      return next;
+    });
+  }, []);
+
+  /**
+   * Theme state — lives at the provider level so it survives navigation.
+   * Local-only `useState` in each page reset to `false` on every route
+   * change, which is why the app appeared to "default" on every nav.
+   *
+   * Initial value is read inline (lazy initializer) on the client. Default
+   * 'light' is also what the inline <script> in layout.js sets pre-hydrate
+   * (when no localStorage entry exists), so the two stay in sync.
+   */
+  const [isDark, setIsDark] = useState(() => {
+    if (typeof window === 'undefined') return false; // SSR-safe
+    return window.localStorage.getItem('theme') === 'dark';
+  });
+
+  // Push the chosen theme to <html data-theme=…> AND persist it.
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+    try {
+      window.localStorage.setItem('theme', isDark ? 'dark' : 'light');
+    } catch {
+      // localStorage can throw in private mode; ignore — runtime state still works.
+    }
+  }, [isDark]);
+
+  const toggleTheme = useCallback(() => setIsDark(d => !d), []);
+
+  /**
+   * Mobile sidebar state — at narrow viewports the sidebar slides in/out.
+   * Lives in context so the Topbar's hamburger button and the Sidebar can
+   * coordinate without prop drilling.
+   */
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const toggleSidebar = useCallback(() => setSidebarOpen(o => !o), []);
+  const closeSidebar = useCallback(() => setSidebarOpen(false), []);
 
   /**
    * lampHistories — { [lampId: number]: number[] }
@@ -155,7 +215,7 @@ export function SimulationProvider({ children }) {
   const fetchData = useCallback(async () => {
     if (simulating) return;
     try {
-      const res = await fetch(DATA_URL, { signal: AbortSignal.timeout(2500) });
+      const res = await fetch(settings.hardwareUrl, { signal: AbortSignal.timeout(2500) });
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const json = await res.json();
       if (json.unique_id) {
@@ -166,6 +226,7 @@ export function SimulationProvider({ children }) {
 
       setLamps(merged);
       setIsOnline(true);
+      setBootState('connected');
       hasHardwareConnectionRef.current = true;
       if (!prevOnlineRef.current) {
         recordEvent({
@@ -199,15 +260,19 @@ export function SimulationProvider({ children }) {
       if (json.uptime) setUptime(json.uptime);
     } catch {
       setIsOnline(false);
+      // Only flip to 'disconnected' if we're not running the simulation —
+      // otherwise the user is intentionally driving fake data and the
+      // "Arduino not connected" UI would be wrong.
+      setBootState(prev => (prev === 'simulating' ? prev : 'disconnected'));
       prevOnlineRef.current = false;
     }
-  }, [simulating, appendToHistories, recordEvent]);
+  }, [simulating, appendToHistories, recordEvent, settings.hardwareUrl]);
 
   useEffect(() => {
     fetchData();
-    const id = setInterval(fetchData, POLL_INTERVAL_MS);
+    const id = setInterval(fetchData, settings.pollIntervalMs);
     return () => clearInterval(id);
-  }, [fetchData]);
+  }, [fetchData, settings.pollIntervalMs]);
 
   /* ── Simulation toggle ── */
   const toggleSimulate = useCallback(() => {
@@ -215,10 +280,14 @@ export function SimulationProvider({ children }) {
       clearInterval(simIntervalRef.current);
       setSimulating(false);
       setIsOnline(false);
+      // After stopping sim, fall back to 'disconnected' until the next real
+      // hardware response moves us back to 'connected'.
+      setBootState('disconnected');
       prevOnlineRef.current = false;
     } else {
       setSimulating(true);
       setIsOnline(true);
+      setBootState('simulating');
       setEspId('SIM_ESP32_01');
       prevOnlineRef.current = true;
       simIdxRef.current = 0;
@@ -256,6 +325,15 @@ export function SimulationProvider({ children }) {
 
   const alertLog = useMemo(() => eventLog.filter(isAlertEntry), [eventLog]);
 
+  /**
+   * arduinoConnected — single source of truth the UI keys off when deciding
+   * whether to render live values or "--" placeholders. Simulation mode
+   * deliberately keeps this `false`: simulated values are not "real" Arduino
+   * data, so the spec's "show dashes when not connected" rule still holds
+   * unless the user is on a screen that explicitly opts into sim values.
+   */
+  const arduinoConnected = bootState === 'connected';
+
   const value = {
     lamps, espId, isOnline, uptime, alertLog,
     simulating, toggleSimulate,
@@ -265,6 +343,16 @@ export function SimulationProvider({ children }) {
     lampHistories, // per-lamp rolling history (30 samples each)
     lampLdrHistories, // per-lamp rolling LDR history (30 samples each)
     tick,
+    bootState,
+    arduinoConnected,
+    isDark,
+    setIsDark,
+    toggleTheme,
+    settings,
+    updateSettings,
+    sidebarOpen,
+    toggleSidebar,
+    closeSidebar,
   };
 
   return (

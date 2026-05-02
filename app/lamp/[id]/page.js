@@ -1,12 +1,13 @@
 'use client';
-import { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import Sidebar from '../../../components/Sidebar';
-import Topbar from '../../../components/Topbar';
+import {
+  Search, Map as MapIcon, Navigation, CheckCircle2, ChevronRight, Info, Lightbulb,
+} from 'lucide-react';
 import CurrentChart from '../../../components/CurrentChart';
+import SensorValue from '../../../components/SensorValue';
 import { useHardwareData, useLampHistory } from '../../../components/useHardwareData';
-import { STATUS_COLORS, STATUS_LABELS, STATUS_BULBS } from '../../../lib/lampData';
+import { STATUS_COLORS, STATUS_LABELS, STATUS_ICONS } from '../../../lib/lampData';
 
 /* Leaflet is browser-only — we dynamic-import the map component */
 import dynamic from 'next/dynamic';
@@ -23,22 +24,17 @@ export default function LampDetailPage() {
   const router = useRouter();
   const lampId = parseInt(params.id, 10);
 
-  const { lamps, isOnline, uptime, alertLog, simulating, toggleSimulate } = useHardwareData();
-  const [isDark, setIsDark] = useState(false);
+  const { lamps, alertLog, simulating, arduinoConnected } = useHardwareData();
+  const showLive = arduinoConnected || simulating;
 
   const lamp = lamps.find(l => l.id === lampId);
   // useLampHistory now reads from global context — no currentValue arg needed
   const history = useLampHistory(lampId);
 
-  // Dark mode
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
-  }, [isDark]);
-
   if (!lamp) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', flexDirection: 'column', gap: '16px' }}>
-        <div style={{ fontSize: '48px' }}>🔍</div>
+        <Search size={48} aria-hidden="true" color="var(--ink3)" />
         <div style={{ fontSize: '18px', color: 'var(--ink2)' }}>Lamp #{lampId} not found</div>
         <Link href="/" className="back-btn">← Back to Dashboard</Link>
       </div>
@@ -47,25 +43,12 @@ export default function LampDetailPage() {
 
   const statusColor = STATUS_COLORS[lamp.status] || 'var(--ink)';
   const statusLabel = STATUS_LABELS[lamp.status] || lamp.status;
-  const bulb = STATUS_BULBS[lamp.status] || '💡';
+  const StatusIcon = STATUS_ICONS[lamp.status] || Lightbulb;
   const lampAlerts = alertLog.filter(a => a.title?.includes(`#${lampId}`));
-  const allLampsForMap = lamps; // Pass all for network view on map
+  const allLampsForMap = lamps;
 
   return (
-    <div className="app">
-      <Sidebar isOnline={isOnline} alertCount={alertLog.length} />
-      <div className="main">
-        <Topbar
-          breadcrumb={`Lamp #${lamp.id} — ${lamp.label}`}
-          isOnline={isOnline}
-          uptime={uptime}
-          isDark={isDark}
-          onThemeToggle={() => setIsDark(d => !d)}
-          onSimulate={toggleSimulate}
-          simulating={simulating}
-        />
-
-        <main className="content">
+    <main className="content">
           {/* Header */}
           <div className="page-header">
             <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
@@ -90,7 +73,9 @@ export default function LampDetailPage() {
           <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr', gap: '20px', marginBottom: '24px' }}>
             {/* Big status card */}
             <div className="card" style={{ textAlign: 'center', padding: '28px 20px' }}>
-              <div style={{ fontSize: '56px', marginBottom: '12px', lineHeight: 1 }}>{bulb}</div>
+              <div style={{ marginBottom: '12px', lineHeight: 1, display: 'flex', justifyContent: 'center' }}>
+                <StatusIcon size={56} color={statusColor} strokeWidth={1.6} aria-hidden="true" />
+              </div>
               <div style={{ fontFamily: 'var(--font-display)', fontSize: '13px', fontWeight: '600', letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: '6px' }}>
                 LAMP {String(lamp.id).padStart(2, '0')}
               </div>
@@ -106,30 +91,38 @@ export default function LampDetailPage() {
                 padding: '12px',
                 fontSize: '11px', color: statusColor, fontWeight: '600', letterSpacing: '0.04em'
               }}>
-                {lamp.status === 'ok' ? '✓ Operating normally' :
-                  lamp.status === 'fault' ? '✗ Requires maintenance' :
-                    lamp.status === 'warn' ? '⚡ Energy wastage active' :
-                      '◦ Standby mode'}
+                {lamp.status === 'ok' ? 'Operating normally' :
+                  lamp.status === 'fault' ? 'Requires maintenance' :
+                    lamp.status === 'warn' ? 'Energy wastage active' :
+                      'Standby mode'}
               </div>
 
               <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 <div className="logic-row" style={{ padding: '6px 0' }}>
                   <span className="logic-key" style={{ fontSize: '11px' }}>Current</span>
-                  <span style={{ fontWeight: '700', fontSize: '16px', color: statusColor }}>{(lamp.current || 0).toFixed(2)}A</span>
+                  <span style={{ fontWeight: '700', fontSize: '16px', color: statusColor }}>
+                    <SensorValue value={lamp.current} connected={showLive} format={v => v.toFixed(2)} unit="A" />
+                  </span>
                 </div>
                 <div className="logic-row" style={{ padding: '6px 0' }}>
                   <span className="logic-key" style={{ fontSize: '11px' }}>LDR (Bulb Light)</span>
                   <span style={{ fontWeight: '700', fontSize: '16px', color: lamp.ldr > 30 ? 'var(--green)' : 'var(--red)' }}>
-                    {lamp.ldr}% — {lamp.ldr > 30 ? 'EMITTING' : 'DARK'}
+                    {showLive
+                      ? `${lamp.ldr}% — ${lamp.ldr > 30 ? 'EMITTING' : 'DARK'}`
+                      : '--'}
                   </span>
                 </div>
                 <div className="logic-row" style={{ padding: '6px 0' }}>
                   <span className="logic-key" style={{ fontSize: '11px' }}>Temp</span>
-                  <span style={{ fontWeight: '700', fontSize: '16px', color: 'var(--ink)' }}>{lamp.temp || '--'}°C</span>
+                  <span style={{ fontWeight: '700', fontSize: '16px', color: 'var(--ink)' }}>
+                    <SensorValue value={lamp.temp} connected={showLive} unit="°C" />
+                  </span>
                 </div>
                 <div className="logic-row" style={{ padding: '6px 0', border: 'none' }}>
                   <span className="logic-key" style={{ fontSize: '11px' }}>PIR</span>
-                  <span style={{ fontWeight: '700', fontSize: '12px', color: lamp.pir ? 'var(--amber)' : 'var(--green)' }}>{lamp.pir ? 'DETECTED' : 'CLEAR'}</span>
+                  <span style={{ fontWeight: '700', fontSize: '12px', color: lamp.pir ? 'var(--amber)' : 'var(--green)' }}>
+                    {showLive ? (lamp.pir ? 'DETECTED' : 'CLEAR') : '--'}
+                  </span>
                 </div>
               </div>
             </div>
@@ -181,8 +174,12 @@ export default function LampDetailPage() {
                   href={`https://www.google.com/maps?q=${lamp.lat},${lamp.lng}`}
                   target="_blank" rel="noopener noreferrer"
                   className="gps-maps-link"
-                  style={{ padding: '4px 10px', marginTop: 0, fontSize: '11px' }}
-                >🗺 Google Maps ↗</a>
+                  style={{ padding: '4px 10px', marginTop: 0, fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                >
+                  <MapIcon size={11} aria-hidden="true" />
+                  Google Maps
+                  <Navigation size={10} aria-hidden="true" />
+                </a>
               </div>
             </div>
             <div className="card-body" style={{ padding: '0' }}>
@@ -192,13 +189,12 @@ export default function LampDetailPage() {
               </div>
             </div>
 
-            {/* Coordinate row */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '1px', background: 'var(--border)', borderTop: '1px solid var(--border)' }}>
+            {/* Coordinate row — only fields the firmware actually reports.
+                Altitude / satellite-count were previously hardcoded fakes. */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: '1px', background: 'var(--border)', borderTop: '1px solid var(--border)' }}>
               {[
                 { k: 'Latitude', v: `${lamp.lat?.toFixed(6)}° N` },
                 { k: 'Longitude', v: `${lamp.lng?.toFixed(6)}° E` },
-                { k: 'Altitude', v: '14.2 m' },
-                { k: 'Satellites', v: '9 locked' },
               ].map(row => (
                 <div key={row.k} style={{ background: 'var(--white)', padding: '12px 16px' }}>
                   <div style={{ fontSize: '10px', color: 'var(--ink3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' }}>{row.k}</div>
@@ -229,8 +225,9 @@ export default function LampDetailPage() {
               </div>
               <div className="card-body" style={{ maxHeight: '260px', overflowY: 'auto' }}>
                 {lampAlerts.length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: '24px', color: 'var(--ink3)', fontSize: '13px' }}>
-                    ✅ No alerts for this lamp
+                  <div style={{ textAlign: 'center', padding: '24px', color: 'var(--ink3)', fontSize: '13px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                    <CheckCircle2 size={14} color="var(--green)" aria-hidden="true" />
+                    No alerts for this lamp
                   </div>
                 ) : lampAlerts.map((a, i) => (
                   <div className="log-item" key={i}>
@@ -249,8 +246,6 @@ export default function LampDetailPage() {
             </div>
           </div>
         </main>
-      </div>
-    </div>
   );
 }
 
@@ -262,28 +257,28 @@ function FaultLogicExplainer({ lamp }) {
   const rules = [
     {
       condition: 'Current ON + Bulb Lit (LDR HIGH)',
-      result: 'Working ✓',
+      result: 'Working',
       detail: 'Relay energised, bulb glowing normally.',
       active: hasCurrent && bulbLit,
       color: 'var(--green)',
     },
     {
       condition: 'Current ON + Bulb Dark (LDR LOW)',
-      result: 'Fused Bulb ✗',
+      result: 'Fused Bulb',
       detail: 'Power is flowing but the bulb emits no light → bulb is fused.',
       active: hasCurrent && !bulbLit,
       color: 'var(--red)',
     },
     {
       condition: 'Current OFF + Bulb Lit (LDR HIGH)',
-      result: 'Wastage / Ghost ⚡',
+      result: 'Wastage / Ghost',
       detail: 'No relay current but LDR detects light → abnormal or external source.',
       active: !hasCurrent && bulbLit,
       color: 'var(--amber)',
     },
     {
       condition: 'Current OFF + Bulb Dark (LDR LOW)',
-      result: 'Standby / OFF ○',
+      result: 'Standby / OFF',
       detail: 'No power, no light → lamp is correctly switched off.',
       active: !hasCurrent && !bulbLit,
       color: 'var(--ink3)',
@@ -328,7 +323,7 @@ function FaultLogicExplainer({ lamp }) {
         }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: r.active ? '4px' : '0' }}>
             <div style={{ fontSize: '12px', color: 'var(--ink2)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              {r.active && <span style={{ fontSize: '14px' }}>▶</span>}
+              {r.active && <ChevronRight size={14} color={r.color} aria-hidden="true" />}
               {r.condition}
             </div>
             <div style={{ fontSize: '12px', fontWeight: '700', color: r.active ? r.color : 'var(--ink4)', flexShrink: 0, marginLeft: '8px' }}>{r.result}</div>
@@ -339,8 +334,11 @@ function FaultLogicExplainer({ lamp }) {
         </div>
       ))}
 
-      <div style={{ marginTop: '12px', fontSize: '11px', color: 'var(--ink3)', lineHeight: 1.6, padding: '8px 10px', background: 'var(--blue-light)', borderRadius: 'var(--radius-xs)' }}>
-        ℹ <strong>How LDR works here:</strong> The LDR sensor is pointed directly at the lamp bulb. A HIGH reading (&gt;30%) means the bulb is glowing. A LOW reading means the bulb is dark — even if current is flowing (= fused bulb fault).
+      <div style={{ marginTop: '12px', fontSize: '11px', color: 'var(--ink3)', lineHeight: 1.6, padding: '8px 10px', background: 'var(--blue-light)', borderRadius: 'var(--radius-xs)', display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
+        <Info size={13} color="var(--blue)" aria-hidden="true" style={{ flexShrink: 0, marginTop: '2px' }} />
+        <span>
+          <strong>How LDR works here:</strong> The LDR sensor is pointed directly at the lamp bulb. A HIGH reading (&gt;30%) means the bulb is glowing. A LOW reading means the bulb is dark — even if current is flowing (= fused bulb fault).
+        </span>
       </div>
     </div>
   );

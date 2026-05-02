@@ -1,18 +1,23 @@
 'use client';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import Sidebar from '../components/Sidebar';
-import Topbar from '../components/Topbar';
-import CurrentChart from '../components/CurrentChart';
-import { useHardwareData } from '../components/useHardwareData';
-import { ENERGY_DATA, STATUS_COLORS, STATUS_LABELS, STATUS_BULBS } from '../lib/lampData';
+import {
+  Lightbulb, Zap, Activity, BatteryWarning, AlertTriangle, CheckCircle2,
+  Search, Download, X, MapPin, Navigation, Hourglass, MapPinOff, Map as MapIcon,
+} from 'lucide-react';
 
-// CHART_BASE removed — we now use the live lampHistories from global context
+import CurrentChart from '../components/CurrentChart';
+import SensorValue from '../components/SensorValue';
+import { useHardwareData } from '../components/useHardwareData';
+import { ENERGY_DATA, STATUS_COLORS, STATUS_LABELS, STATUS_ICONS } from '../lib/lampData';
 
 export default function HomePage() {
   const router = useRouter();
-  const { lamps, espId, isOnline, uptime, alertLog, eventLog, simulating, toggleSimulate, kpi, lampHistories, lampLdrHistories } = useHardwareData();
-  const [isDark, setIsDark] = useState(false);
+  const {
+    lamps, espId, isOnline, alertLog, eventLog,
+    simulating, kpi, lampHistories, lampLdrHistories,
+    bootState, arduinoConnected,
+  } = useHardwareData();
   const [filterPill, setFilterPill] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [alertVisible, setAlertVisible] = useState(true);
@@ -42,15 +47,12 @@ export default function HomePage() {
     });
   }, [lampLdrHistories]);
 
-  // Dark mode toggle
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
-  }, [isDark]);
+  // (Theme effect now lives in SimulationContext so it persists across nav.)
 
   // Connection status bar
   useEffect(() => {
     if (wasOnlineRef.current !== isOnline) {
-      setConnBarMsg(isOnline ? '✅ ESP32 Connected — Live data active' : '⚠️ Hardware offline — showing simulation data');
+      setConnBarMsg(isOnline ? 'ESP32 Connected — Live data active' : 'Hardware offline — showing simulation data');
       const t = setTimeout(() => setConnBarMsg(''), 4000);
       wasOnlineRef.current = isOnline;
       return () => clearTimeout(t);
@@ -80,39 +82,53 @@ export default function HomePage() {
     const a = document.createElement('a'); a.href = url; a.download = 'street-eye-events.csv'; a.click();
   };
 
-  return (
-    <div className="app">
-      <Sidebar isOnline={isOnline} alertCount={alertLog.length} />
-      <div className="main">
-        <Topbar
-          breadcrumb="Overview"
-          isOnline={isOnline}
-          uptime={uptime}
-          isDark={isDark}
-          onThemeToggle={() => setIsDark(d => !d)}
-          onSimulate={toggleSimulate}
-          simulating={simulating}
-        />
+  // Live values are only "real" when arduinoConnected. Sim mode also flows
+  // numbers into kpi/lamps but keeps arduinoConnected=false so the UI
+  // honours the "show dashes when not connected" spec.
+  const showLive = arduinoConnected || simulating;
+  const isBooting = bootState === 'connecting' && lamps.length === 0;
 
-        <main className="content">
+  // Pre-computed LDR aggregates so the JSX below stays tidy.
+  const ldrMin = lamps.length ? Math.min(...lamps.map(l => l.ldr || 0)) : 0;
+  const ldrMax = lamps.length ? Math.max(...lamps.map(l => l.ldr || 0)) : 0;
+  const avgTemp = lamps.length ? lamps.reduce((a, l) => a + (l.temp || 0), 0) / lamps.length : 0;
+  const lastLdr = avgLdrHistory[avgLdrHistory.length - 1] || 0;
+  const darkLamps = lamps.filter(l => (l.ldr || 0) <= 30).length;
+  const brightLamps = lamps.filter(l => (l.ldr || 0) > 30).length;
+
+  return (
+    <>
+      <main className="content">
           {/* Page header */}
           <div className="page-header">
             <div>
-              <div className="page-eyebrow">{espId ? `ESP32 Node: ${espId}` : 'Waiting for ESP32...'}</div>
+              <div className="page-eyebrow">
+                {espId
+                  ? `ESP32 Node: ${espId}`
+                  : isBooting ? 'Connecting to ESP32…' : 'Waiting for ESP32...'}
+              </div>
               <h1 className="page-title">Streetlamp <em>Overview</em></h1>
             </div>
             <div className="page-header-stats">
               <div className="page-stat">
-                <div className="page-stat-val">{lamps.length ? ((kpi.online / lamps.length) * 100).toFixed(1) + '%' : '--%'}</div>
+                <div className="page-stat-val">
+                  <SensorValue
+                    value={lamps.length ? (kpi.online / lamps.length) * 100 : null}
+                    connected={showLive && lamps.length > 0}
+                    format={v => v.toFixed(1) + '%'}
+                  />
+                </div>
                 <div className="page-stat-label">Uptime today</div>
               </div>
               <div className="page-stat">
-                <div className="page-stat-val" style={{ fontSize: '16px', color: 'var(--ink3)' }}>{isOnline ? 'Just now' : 'Simulated'}</div>
+                <div className="page-stat-val" style={{ fontSize: '16px', color: 'var(--ink3)' }}>
+                  {arduinoConnected ? 'Just now' : simulating ? 'Simulated' : '--'}
+                </div>
                 <div className="page-stat-label">Last sync</div>
               </div>
               <div className="page-stat">
                 <button className="export-btn" onClick={exportLog}>
-                  ⬇ Export Log
+                  <Download size={14} aria-hidden="true" /> Export Log
                 </button>
               </div>
             </div>
@@ -124,64 +140,68 @@ export default function HomePage() {
               background: activeAlert.type === 'fault' ? 'linear-gradient(135deg,#fff5f5,#fff0f0)' : 'linear-gradient(135deg,#fffaf4,#fff8ee)',
               borderLeftColor: activeAlert.type === 'fault' ? 'var(--red)' : 'var(--amber)',
             }}>
-              <div className="alert-icon-wrap">⚠️</div>
+              <div className="alert-icon-wrap">
+                <AlertTriangle size={20} color={activeAlert.type === 'fault' ? 'var(--red)' : 'var(--amber)'} aria-hidden="true" />
+              </div>
               <div className="alert-body">
                 <div className="alert-title" style={{ color: activeAlert.type === 'fault' ? 'var(--red)' : 'var(--amber-dark)' }}>
                   {activeAlert.title}
                 </div>
                 <div className="alert-msg">{activeAlert.msg}</div>
               </div>
-              <button className="alert-close" onClick={() => setAlertVisible(false)}>×</button>
+              <button className="alert-close" onClick={() => setAlertVisible(false)} aria-label="Dismiss alert">
+                <X size={14} aria-hidden="true" />
+              </button>
             </div>
           )}
 
           {/* KPI cards */}
           <div className="section-label">Key Metrics</div>
           <div className="kpi-grid">
-            <div className="kpi-card">
-              <div className="bg-shape" style={{ background: 'var(--green)' }}></div>
-              <div className="kpi-top">
-                <span className="kpi-label">Lamps Online</span>
-                <div className="kpi-icon" style={{ background: 'var(--green-light)' }}>💡</div>
-              </div>
-              <div className="kpi-val" style={{ color: 'var(--green)' }}>{kpi.online}</div>
-              <div className="kpi-sub">of {lamps.length} lamps active</div>
-              <div className="kpi-trend" style={{ background: 'var(--green-light)', color: 'var(--green)' }}>↑ All night</div>
-            </div>
-            <div className="kpi-card">
-              <div className="bg-shape" style={{ background: 'var(--red)' }}></div>
-              <div className="kpi-top">
-                <span className="kpi-label">Active Faults</span>
-                <div className="kpi-icon" style={{ background: 'var(--red-light)' }}>⚡</div>
-              </div>
-              <div className="kpi-val" style={{ color: 'var(--red)' }}>{kpi.faults}</div>
-              <div className="kpi-sub">needs attention</div>
-              <div className="kpi-trend" style={{ background: 'var(--red-light)', color: 'var(--red)' }}>
-                {kpi.faults > 0 ? `⬆ ${kpi.faults} active` : '✓ None'}
-              </div>
-            </div>
-            <div className="kpi-card">
-              <div className="bg-shape" style={{ background: 'var(--blue)' }}></div>
-              <div className="kpi-top">
-                <span className="kpi-label">Avg Current</span>
-                <div className="kpi-icon" style={{ background: 'var(--blue-light)' }}>⚙️</div>
-              </div>
-              <div className="kpi-val" style={{ color: 'var(--blue)' }}>{kpi.avgCurrent}</div>
-              <div className="kpi-sub">amperes</div>
-              <div className="kpi-trend" style={{ background: 'var(--blue-light)', color: 'var(--blue)' }}>→ Stable</div>
-            </div>
-            <div className="kpi-card">
-              <div className="bg-shape" style={{ background: 'var(--amber)' }}></div>
-              <div className="kpi-top">
-                <span className="kpi-label">Energy Wasted</span>
-                <div className="kpi-icon" style={{ background: 'var(--amber-light)' }}>🔋</div>
-              </div>
-              <div className="kpi-val" style={{ color: 'var(--amber)' }}>{kpi.wasted}</div>
-              <div className="kpi-sub">A wastage (daytime)</div>
-              <div className="kpi-trend" style={{ background: 'var(--amber-light)', color: 'var(--amber-dark)' }}>
-                {kpi.warns > 0 ? `↑ ${kpi.warns} lamp(s) on` : '✓ No wastage'}
-              </div>
-            </div>
+            <KpiCard
+              label="Lamps Online"
+              icon={<Lightbulb size={18} aria-hidden="true" />}
+              accent="var(--green)"
+              accentLight="var(--green-light)"
+              value={kpi.online}
+              connected={showLive}
+              sub={`of ${lamps.length} lamps active`}
+              trend={<><Activity size={12} aria-hidden="true" /> All night</>}
+            />
+            <KpiCard
+              label="Active Faults"
+              icon={<AlertTriangle size={18} aria-hidden="true" />}
+              accent="var(--red)"
+              accentLight="var(--red-light)"
+              value={kpi.faults}
+              connected={showLive}
+              sub="needs attention"
+              trend={kpi.faults > 0
+                ? <><AlertTriangle size={12} aria-hidden="true" /> {kpi.faults} active</>
+                : <><CheckCircle2 size={12} aria-hidden="true" /> None</>}
+            />
+            <KpiCard
+              label="Avg Current"
+              icon={<Activity size={18} aria-hidden="true" />}
+              accent="var(--blue)"
+              accentLight="var(--blue-light)"
+              value={kpi.avgCurrent}
+              connected={showLive}
+              sub="amperes"
+              trend={<><Activity size={12} aria-hidden="true" /> Stable</>}
+            />
+            <KpiCard
+              label="Energy Wasted"
+              icon={<BatteryWarning size={18} aria-hidden="true" />}
+              accent="var(--amber)"
+              accentLight="var(--amber-light)"
+              value={kpi.wasted}
+              connected={showLive}
+              sub="A wastage (daytime)"
+              trend={kpi.warns > 0
+                ? <><Zap size={12} aria-hidden="true" /> {kpi.warns} lamp(s) on</>
+                : <><CheckCircle2 size={12} aria-hidden="true" /> No wastage</>}
+            />
           </div>
 
           {/* Sensor grid */}
@@ -189,7 +209,7 @@ export default function HomePage() {
           <div className="sensor-grid">
             {/* Fault status */}
             <div className="sensor-panel sensor-panel-fault">
-              <FaultStatusCard lamps={lamps} />
+              <FaultStatusCard lamps={lamps} connected={showLive} />
             </div>
 
             {/* Current chart */}
@@ -200,31 +220,19 @@ export default function HomePage() {
               </div>
               <div className="card-body">
                 <div className="chart-container">
-                  {/* Live averaged current history across all lamps — updates every simulation tick */}
                   <CurrentChart data={avgHistory} yUnit="A" yDecimals={1} />
                 </div>
                 <div className="chart-meta"><span>← 30s ago</span><span>now →</span></div>
                 <div className="sensor-readings">
-                  <div className="reading-card">
-                    <div className="reading-label">Avg Current</div>
-                    <div className="reading-val">{kpi.avgCurrent}</div>
-                    <div className="reading-unit">amperes</div>
-                  </div>
-                  <div className="reading-card">
-                    <div className="reading-label">Faults</div>
-                    <div className="reading-val" style={{ color: 'var(--red)' }}>{kpi.faults}</div>
-                    <div className="reading-unit">lamps fused</div>
-                  </div>
-                  <div className="reading-card">
-                    <div className="reading-label">LDR Range</div>
-                    <div className="reading-val">{lamps.length ? Math.min(...lamps.map(l => l.ldr || 0)) : 0}–{lamps.length ? Math.max(...lamps.map(l => l.ldr || 0)) : 0}</div>
-                    <div className="reading-unit">% intensity</div>
-                  </div>
-                  <div className="reading-card">
-                    <div className="reading-label">Avg Temp</div>
-                    <div className="reading-val">{lamps.length ? (lamps.reduce((a, l) => a + (l.temp || 0), 0) / lamps.length).toFixed(1) : '--'}</div>
-                    <div className="reading-unit">°C — DS18B20</div>
-                  </div>
+                  <Reading label="Avg Current" connected={showLive} value={parseFloat(kpi.avgCurrent)} format={v => v.toFixed(2)} unit="amperes" />
+                  <Reading label="Faults" connected={showLive} value={kpi.faults} unit="lamps fused" valueColor="var(--red)" />
+                  <Reading
+                    label="LDR Range"
+                    connected={showLive && lamps.length > 0}
+                    rawText={`${ldrMin}–${ldrMax}`}
+                    unit="% intensity"
+                  />
+                  <Reading label="Avg Temp" connected={showLive && lamps.length > 0} value={avgTemp} format={v => v.toFixed(1)} unit="°C — DS18B20" />
                 </div>
               </div>
             </div>
@@ -247,26 +255,15 @@ export default function HomePage() {
                 </div>
                 <div className="chart-meta"><span>← 30s ago</span><span>now →</span></div>
                 <div className="sensor-readings">
-                  <div className="reading-card">
-                    <div className="reading-label">Avg Intensity</div>
-                    <div className="reading-val">{(avgLdrHistory[avgLdrHistory.length - 1] || 0).toFixed(0)}</div>
-                    <div className="reading-unit">percent</div>
-                  </div>
-                  <div className="reading-card">
-                    <div className="reading-label">Dark Lamps</div>
-                    <div className="reading-val" style={{ color: 'var(--red)' }}>{lamps.filter(l => (l.ldr || 0) <= 30).length}</div>
-                    <div className="reading-unit">≤ 30% bulb light</div>
-                  </div>
-                  <div className="reading-card">
-                    <div className="reading-label">Bright Lamps</div>
-                    <div className="reading-val" style={{ color: 'var(--green)' }}>{lamps.filter(l => (l.ldr || 0) > 30).length}</div>
-                    <div className="reading-unit">&gt; 30% bulb light</div>
-                  </div>
-                  <div className="reading-card">
-                    <div className="reading-label">Intensity Range</div>
-                    <div className="reading-val">{lamps.length ? Math.min(...lamps.map(l => l.ldr || 0)) : 0}–{lamps.length ? Math.max(...lamps.map(l => l.ldr || 0)) : 0}</div>
-                    <div className="reading-unit">percent</div>
-                  </div>
+                  <Reading label="Avg Intensity" connected={showLive} value={lastLdr} format={v => v.toFixed(0)} unit="percent" />
+                  <Reading label="Dark Lamps" connected={showLive} value={darkLamps} unit="≤ 30% bulb light" valueColor="var(--red)" />
+                  <Reading label="Bright Lamps" connected={showLive} value={brightLamps} unit="> 30% bulb light" valueColor="var(--green)" />
+                  <Reading
+                    label="Intensity Range"
+                    connected={showLive && lamps.length > 0}
+                    rawText={`${ldrMin}–${ldrMax}`}
+                    unit="percent"
+                  />
                 </div>
               </div>
             </div>
@@ -289,7 +286,7 @@ export default function HomePage() {
               </div>
               <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
                 <div className="search-bar">
-                  <span>🔍</span>
+                  <Search size={14} className="icon-inline" aria-hidden="true" />
                   <input
                     type="text"
                     placeholder="Search lamps…"
@@ -309,31 +306,46 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* lamp-grid CSS uses auto-fill minmax(160px) for responsive landscape cards */}
             <div className="lamp-grid">
               {filteredLamps.map(lamp => {
-                const bulb = STATUS_BULBS[lamp.status] || '💡';
+                const Icon = STATUS_ICONS[lamp.status] || Lightbulb;
                 const bc = lamp.status === 'ok' ? 'badge-ok'
                   : lamp.status === 'fault' ? 'badge-fault'
                     : lamp.status === 'warn' ? 'badge-warn'
                       : 'badge-standby';
+                const iconColor = STATUS_COLORS[lamp.status] || 'var(--ink2)';
                 return (
                   <div
                     key={lamp.id}
                     className={`lamp-card ${lamp.status}`}
                     onClick={() => router.push(`/lamp/${lamp.id}`)}
                     role="button"
+                    tabIndex={0}
+                    onKeyDown={e => { if (e.key === 'Enter') router.push(`/lamp/${lamp.id}`); }}
                     title={`Click to view ${lamp.label}`}
                   >
-                    {/* Left: bulb icon */}
-                    <span className="lamp-bulb">{bulb}</span>
-                    {/* Right: text body */}
+                    <span className="lamp-bulb" aria-hidden="true">
+                      <Icon size={26} color={iconColor} strokeWidth={1.8} />
+                    </span>
                     <div className="lamp-card-body">
                       <div className="lamp-num">LAMP {String(lamp.id).padStart(2, '0')}</div>
                       <span className={`lamp-status-badge ${bc}`}>{STATUS_LABELS[lamp.status]}</span>
-                      <div className="lamp-stat">I: <span style={{ color: lamp.status === 'fault' ? 'var(--red)' : lamp.status === 'warn' ? 'var(--amber-dark)' : '' }}>{(lamp.current || 0).toFixed(2)}A</span></div>
-                      <div className="lamp-stat">LDR: <span>{lamp.ldr}%</span></div>
-                      <div className="lamp-stat">Temp: <span>{lamp.temp || '--'}°C</span></div>
+                      <div className="lamp-stat">
+                        I:{' '}
+                        <SensorValue
+                          value={lamp.current}
+                          connected={showLive}
+                          format={v => v.toFixed(2)}
+                          unit="A"
+                          style={{ color: lamp.status === 'fault' ? 'var(--red)' : lamp.status === 'warn' ? 'var(--amber-dark)' : '' }}
+                        />
+                      </div>
+                      <div className="lamp-stat">
+                        LDR: <SensorValue value={lamp.ldr} connected={showLive} unit="%" />
+                      </div>
+                      <div className="lamp-stat">
+                        Temp: <SensorValue value={lamp.temp} connected={showLive} unit="°C" />
+                      </div>
                       <div className="lamp-click-hint">Click to inspect →</div>
                     </div>
                   </div>
@@ -341,7 +353,7 @@ export default function HomePage() {
               })}
               {filteredLamps.length === 0 && (
                 <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '32px', color: 'var(--ink3)', fontSize: '14px' }}>
-                  No lamps matching "{searchQuery || filterPill}"
+                  No lamps matching &ldquo;{searchQuery || filterPill}&rdquo;
                 </div>
               )}
             </div>
@@ -402,20 +414,67 @@ export default function HomePage() {
               </div>
             </div>
           </div>
-        </main>
-      </div>
+      </main>
 
-      {/* Connection bar */}
+      {/* Connection bar — global toast, lives outside .content. */}
       {connBarMsg && (
         <div className={`conn-bar ${isOnline ? 'online' : ''}`}>{connBarMsg}</div>
       )}
-    </div>
+    </>
   );
 }
 
 /* ── Sub-components ── */
 
-function FaultStatusCard({ lamps }) {
+/**
+ * KpiCard — single metric tile. Centralised so all four KPIs share one
+ * implementation, keeping the icon/value/sub/trend layout consistent.
+ */
+function KpiCard({ label, icon, accent, accentLight, value, connected, sub, trend }) {
+  return (
+    <div className="kpi-card">
+      <div className="bg-shape" style={{ background: accent }}></div>
+      <div className="kpi-top">
+        <span className="kpi-label">{label}</span>
+        <div className="kpi-icon" style={{ background: accentLight, color: accent }}>{icon}</div>
+      </div>
+      <div className="kpi-val" style={{ color: accent }}>
+        <SensorValue value={value} connected={connected} />
+      </div>
+      <div className="kpi-sub">{sub}</div>
+      <div className="kpi-trend" style={{ background: accentLight, color: accent, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+        {trend}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Reading — small labeled value tile in the sensor cards.
+ * Either pass a numeric `value` (formatted via SensorValue) or a precomputed
+ * `rawText` (still gated on `connected`).
+ */
+function Reading({ label, value, rawText, connected, format, unit, valueColor }) {
+  // Two display modes: (a) numeric value formatted via SensorValue, or
+  // (b) precomputed `rawText` (e.g. "5–88") shown only when connected.
+  return (
+    <div className="reading-card">
+      <div className="reading-label">{label}</div>
+      <div className="reading-val" style={valueColor ? { color: valueColor } : undefined}>
+        {rawText !== undefined
+          ? (
+            <span className={`sensor-value${connected ? '' : ' sensor-value-off'}`}>
+              {connected ? rawText : '--'}
+            </span>
+          )
+          : <SensorValue value={value} connected={connected} format={format} />}
+      </div>
+      {unit && <div className="reading-unit">{unit}</div>}
+    </div>
+  );
+}
+
+function FaultStatusCard({ lamps, connected }) {
   const faultLamp = lamps.find(l => l.status === 'fault');
   const warnLamp = lamps.find(l => l.status === 'warn');
   const primary = faultLamp || warnLamp;
@@ -424,7 +483,7 @@ function FaultStatusCard({ lamps }) {
   const badgeBg = faultLamp ? 'var(--red-light)' : warnLamp ? 'var(--amber-light)' : 'var(--green-light)';
   const badgeLabel = faultLamp ? 'FAULT' : warnLamp ? 'WASTAGE' : 'NORMAL';
   const arcOffset = faultLamp ? 200 : warnLamp ? 120 : 30;
-  const emoji = faultLamp ? '💡' : warnLamp ? '⚡' : '✅';
+  const StatusIcon = faultLamp ? AlertTriangle : warnLamp ? Zap : CheckCircle2;
   const label = faultLamp ? 'Fused Bulb' : warnLamp ? 'Ghost / Wastage' : 'All Working';
   const desc = faultLamp
     ? `Current ON (${faultLamp.current?.toFixed(2)}A) but bulb is dark (LDR=${faultLamp.ldr}%).\nLamp #${faultLamp.id} — bulb fused, replace immediately.`
@@ -451,7 +510,9 @@ function FaultStatusCard({ lamps }) {
                 style={{ transition: 'stroke 0.5s, stroke-dashoffset 0.8s cubic-bezier(0.16,1,0.3,1)' }}
               />
             </svg>
-            <div className="status-ring-inner"><span className="status-emoji">{emoji}</span></div>
+            <div className="status-ring-inner">
+              <StatusIcon size={28} color={color} aria-hidden="true" />
+            </div>
           </div>
           <div className="status-label" style={{ color }}>{label}</div>
           <div className="status-desc">
@@ -462,24 +523,28 @@ function FaultStatusCard({ lamps }) {
           <div className="logic-row">
             <span className="logic-key">LDR (Bulb Light)</span>
             <span className={`logic-val ${(sampleLamp?.ldr || 0) > 30 ? 'ok' : 'warn'}`}>
-              {(sampleLamp?.ldr || 0) > 30 ? 'EMITTING' : 'DARK'} ({sampleLamp?.ldr || 0}%)
+              {connected
+                ? `${(sampleLamp?.ldr || 0) > 30 ? 'EMITTING' : 'DARK'} (${sampleLamp?.ldr || 0}%)`
+                : '--'}
             </span>
           </div>
           <div className="logic-row">
             <span className="logic-key">Current Draw</span>
             <span className={`logic-val ${faultLamp ? 'bad' : 'ok'}`}>
-              {(sampleLamp?.current || 0).toFixed(2)} A
+              <SensorValue value={sampleLamp?.current} connected={connected} format={v => v.toFixed(2)} unit=" A" />
             </span>
           </div>
           <div className="logic-row">
             <span className="logic-key">PIR Motion</span>
             <span className={`logic-val ${sampleLamp?.pir ? 'warn' : 'ok'}`}>
-              {sampleLamp?.pir ? 'DETECTED' : 'CLEAR'}
+              {connected ? (sampleLamp?.pir ? 'DETECTED' : 'CLEAR') : '--'}
             </span>
           </div>
           <div className="logic-row">
             <span className="logic-key">Temperature</span>
-            <span className="logic-val neutral">{sampleLamp?.temp || '--'}°C</span>
+            <span className="logic-val neutral">
+              <SensorValue value={sampleLamp?.temp} connected={connected} unit="°C" />
+            </span>
           </div>
         </div>
       </div>
@@ -488,27 +553,20 @@ function FaultStatusCard({ lamps }) {
 }
 
 /**
- * GpsCard — shows the USER'S current device location via browser Geolocation API.
- *
- * States:
- *  'idle'     → requesting permission (pulsing animation)
- *  'success'  → shows real lat/lng/accuracy + Google Maps link
- *  'denied'   → permission denied or unavailable, shows friendly message
+ * GpsCard — shows the USER'S current device location via browser Geolocation.
+ * (This card is independent of the Arduino — geolocation comes from the
+ * browser, so it stays live even when hardware is offline.)
  */
 function GpsCard() {
   const [geoState, setGeoState] = useState('idle');   // 'idle' | 'success' | 'denied'
-  const [position, setPosition] = useState(null);     // { lat, lng, accuracy, altitude }
+  const [position, setPosition] = useState(null);
 
   useEffect(() => {
-    // Guard: Geolocation not available (e.g. HTTP without HTTPS in some browsers)
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
       setGeoState('denied');
       return;
     }
-
-    // Request user location once on mount
     navigator.geolocation.getCurrentPosition(
-      /* ── SUCCESS ── */
       (pos) => {
         setPosition({
           lat: pos.coords.latitude,
@@ -518,10 +576,7 @@ function GpsCard() {
         });
         setGeoState('success');
       },
-      /* ── DENIED / ERROR ── */
-      () => {
-        setGeoState('denied');
-      },
+      () => setGeoState('denied'),
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
     );
   }, []);
@@ -539,7 +594,6 @@ function GpsCard() {
       </div>
 
       <div className="card-body">
-        {/* Visual preview — pulsing rings animate while idle */}
         <div className="gps-map-preview" style={{
           background: geoState === 'success'
             ? 'linear-gradient(135deg, var(--blue-light), var(--cream2))'
@@ -547,7 +601,6 @@ function GpsCard() {
         }}>
           <div className="gps-map-grid"></div>
 
-          {/* Pulsing rings — animate while idle, calm when got location */}
           {['60px', '100px', '140px'].map((size, i) => (
             <div key={size} className="gps-circle" style={{
               width: size, height: size,
@@ -558,41 +611,46 @@ function GpsCard() {
             }} />
           ))}
 
-          {/* Pin emoji — colour changes with state */}
           <div className="gps-pin" style={{
             filter: geoState === 'success'
               ? 'drop-shadow(0 2px 8px rgba(26,138,82,0.5))'
               : geoState === 'denied'
                 ? 'grayscale(1) opacity(0.4)'
                 : 'drop-shadow(0 2px 8px rgba(29,101,184,0.4))',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
           }}>
-            {geoState === 'denied' ? '🚫' : '📍'}
+            {geoState === 'denied'
+              ? <MapPinOff size={26} aria-hidden="true" />
+              : <MapPin size={26} aria-hidden="true" />}
           </div>
         </div>
 
-        {/* ── IDLE: acquiring ── */}
         {geoState === 'idle' && (
-          <div style={{ textAlign: 'center', padding: '8px 0', color: 'var(--ink3)', fontSize: '12px' }}>
-            <span style={{ animation: 'blink 1.4s ease-in-out infinite' }}>⏳</span>
-            {' '}Requesting location permission…
+          <div style={{ textAlign: 'center', padding: '8px 0', color: 'var(--ink3)', fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: '6px', justifyContent: 'center', width: '100%' }}>
+            <Hourglass size={12} className="icon-inline" aria-hidden="true" />
+            Requesting location permission…
           </div>
         )}
 
-        {/* ── DENIED: graceful fallback ── */}
         {geoState === 'denied' && (
           <div style={{
             background: 'var(--red-light)', border: '1px solid rgba(214,49,49,0.2)',
             borderRadius: 'var(--radius-xs)', padding: '10px 12px',
             fontSize: '12px', color: 'var(--red)', marginBottom: '8px', lineHeight: 1.5,
+            display: 'flex', alignItems: 'flex-start', gap: '8px',
           }}>
-            📵 Location access was denied.<br />
-            <span style={{ color: 'var(--ink2)' }}>
-              Enable it in browser settings to see your real coordinates.
-            </span>
+            <MapPinOff size={14} className="icon-inline" aria-hidden="true" />
+            <div>
+              Location access was denied.<br />
+              <span style={{ color: 'var(--ink2)' }}>
+                Enable it in browser settings to see your real coordinates.
+              </span>
+            </div>
           </div>
         )}
 
-        {/* ── SUCCESS: show real coordinates ── */}
         {geoState === 'success' && position && (<>
           <div className="gps-row">
             <span className="gps-key">Latitude</span>
@@ -615,11 +673,15 @@ function GpsCard() {
             href={`https://www.google.com/maps?q=${position.lat},${position.lng}`}
             target="_blank"
             rel="noopener noreferrer"
-          >🗺 Open My Location in Google Maps ↗</a>
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+          >
+            <MapIcon size={13} aria-hidden="true" />
+            Open My Location in Google Maps
+            <Navigation size={12} aria-hidden="true" />
+          </a>
         </>)}
       </div>
 
-      {/* Keyframe for ring pulse animation (injected inline for isolation) */}
       <style>{`
         @keyframes gpsRingPulse {
           from { transform: translate(-50%, -50%) scale(0.92); opacity: 0.6; }

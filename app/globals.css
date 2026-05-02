@@ -461,6 +461,12 @@ body::after {
 
 /* ── CONTENT ── */
 .content {
+  /* Cap the content width on wide displays and centre it within the main
+     column. Without this the cards stretch edge-to-edge on big monitors
+     and the dashboard looks unbalanced. */
+  width: 100%;
+  max-width: 1600px;
+  margin: 0 auto;
   padding: 32px 40px 56px;
   flex: 1;
 }
@@ -1708,4 +1714,226 @@ canvas.chart-canvas {
   .sensor-readings {
     grid-template-columns: 1fr 1fr;
   }
+}
+
+/* ── Mobile sidebar (collapses below 1024px) ─────────────────────────── */
+.topbar-hamburger {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  color: var(--ink2);
+  cursor: pointer;
+  margin-right: 8px;
+  transition: background 0.18s, border-color 0.18s, color 0.18s;
+}
+.topbar-hamburger:hover,
+.topbar-hamburger:focus-visible {
+  background: var(--cream2);
+  color: var(--ink);
+  outline: none;
+}
+
+.sidebar-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(26, 20, 16, 0.5);
+  backdrop-filter: blur(2px);
+  z-index: 90; /* above main, below the sidebar */
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  animation: fadeOverlay 0.2s ease;
+}
+
+@media (max-width: 1024px) {
+  .topbar-hamburger { display: inline-flex; }
+
+  /* Sidebar slides off-screen by default; the .sidebar-open modifier
+     slides it back in when the user opens the menu. */
+  .sidebar {
+    transform: translateX(-100%);
+    transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .sidebar.sidebar-open { transform: translateX(0); }
+
+  /* Reclaim the 260px gutter the sidebar previously held. */
+  .main { margin-left: 0; }
+
+  /* The backdrop is only visible on mobile. */
+  .sidebar-backdrop { display: block; }
+}
+
+/* ── Dialog ────────────────────────────────────────────────────────────────
+   Shared modal styles used by <Dialog />. The .modal-overlay class above
+   provides the backdrop; .dialog-card is the panel.                        */
+.dialog-card {
+  position: relative;
+  width: min(440px, calc(100vw - 32px));
+  background: var(--white);
+  color: var(--ink);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 28px 24px 20px;
+  box-shadow: var(--shadow-lg);
+  font-family: var(--font-body);
+  animation: dialogIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes dialogIn {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0)   scale(1); }
+}
+
+.dialog-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-xs);
+  color: var(--ink3);
+  cursor: pointer;
+  transition: background 0.18s, color 0.18s, border-color 0.18s;
+}
+
+.dialog-close:hover,
+.dialog-close:focus-visible {
+  background: var(--cream2);
+  color: var(--ink);
+  border-color: var(--border);
+  outline: none;
+}
+
+.dialog-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.dialog-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dialog-title {
+  font-family: var(--font-display);
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0;
+}
+
+.dialog-body {
+  font-size: 14px;
+  color: var(--ink2);
+  line-height: 1.55;
+  margin-bottom: 20px;
+}
+
+.dialog-body p { margin: 0 0 8px; }
+.dialog-body p:last-child { margin-bottom: 0; }
+
+.dialog-hint {
+  font-size: 12px;
+  color: var(--ink3);
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.dialog-btn {
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 9px 16px;
+  border-radius: var(--radius-xs);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 0.18s, color 0.18s, border-color 0.18s;
+}
+
+.dialog-btn-primary {
+  background: var(--ink);
+  color: var(--white);
+}
+
+.dialog-btn-primary:hover {
+  background: var(--ink2);
+}
+
+.dialog-btn-ghost {
+  background: var(--cream2);
+  color: var(--ink2);
+  border-color: var(--border);
+}
+
+.dialog-btn-ghost:hover {
+  background: var(--cream3);
+  color: var(--ink);
+}
+
+/* ── Theme toggle button — show one icon at a time, driven purely by CSS
+   so SSR and client agree (avoids hydration mismatch on Sun/Moon). ────── */
+.theme-toggle .theme-toggle-icon-dark { display: none; }
+[data-theme="dark"] .theme-toggle .theme-toggle-icon-light { display: none; }
+[data-theme="dark"] .theme-toggle .theme-toggle-icon-dark { display: inline-block; }
+
+/* ── Sensor value — smooth update transitions + offline state ──────────── */
+.sensor-value {
+  display: inline-block;
+  transition: color 0.3s ease, opacity 0.3s ease;
+}
+
+.sensor-value-off {
+  color: var(--ink4);
+  letter-spacing: 0.04em;
+}
+
+/* ── Inline icon alignment helper for icons used next to text ──────────── */
+.icon-inline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: -2px;
+  flex-shrink: 0;
+}
+
+/* ── Skeleton loader (used while waiting on the first poll response) ───── */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--cream2) 0%,
+    var(--cream3) 50%,
+    var(--cream2) 100%
+  );
+  background-size: 200% 100%;
+  animation: skeletonShimmer 1.4s ease-in-out infinite;
+  border-radius: var(--radius-xs);
+  color: transparent;
+}
+
+@keyframes skeletonShimmer {
+  0%   { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
 }

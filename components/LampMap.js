@@ -10,6 +10,9 @@
  * ─────────────────────────────────────────────────────────────────────────
  */
 import { useEffect, useRef } from 'react';
+// Bundle Leaflet's CSS from node_modules instead of fetching it from unpkg —
+// works offline, no third-party request, and benefits from CSS bundling.
+import 'leaflet/dist/leaflet.css';
 
 const STATUS_COLORS_HEX = {
   ok:      '#1a8a52',
@@ -40,15 +43,6 @@ export default function LampMap({ lamps, focusedLampId, onLampSelect }) {
   /* ── Initial map setup ── */
   useEffect(() => {
     if (typeof window === 'undefined') return;
-
-    /* Inject Leaflet CSS once */
-    if (!document.getElementById('leaflet-css')) {
-      const link   = document.createElement('link');
-      link.id      = 'leaflet-css';
-      link.rel     = 'stylesheet';
-      link.href    = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-      document.head.appendChild(link);
-    }
 
     import('leaflet').then(L => {
       if (!mapRef.current || mapInstance.current) return;
@@ -139,6 +133,16 @@ function addMarkers(L, map, lamps, focusedLampId, markersRef, onLampSelect) {
       ? '0 2px 16px rgba(0,0,0,0.45)'
       : '0 2px 8px rgba(0,0,0,0.25)';
 
+    /* Inline Lucide-style "lightbulb" SVG. Kept as a string template so we
+       don't need ReactDOMServer just to render a Leaflet divIcon. */
+    const iconSize = isFocused ? 17 : 13;
+    const bulbSvg = `
+      <svg width="${iconSize}" height="${iconSize}" viewBox="0 0 24 24"
+           fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/>
+        <path d="M9 18h6"/>
+        <path d="M10 22h4"/>
+      </svg>`;
     const icon = L.divIcon({
       className: '',
       html: `
@@ -149,10 +153,9 @@ function addMarkers(L, map, lamps, focusedLampId, markersRef, onLampSelect) {
           border:${border};
           box-shadow:${shadow};
           display:flex; align-items:center; justify-content:center;
-          font-size:${isFocused ? 17 : 13}px;
           cursor:pointer;
           transition:all 0.2s;
-        ">💡</div>
+        ">${bulbSvg}</div>
       `,
       iconSize:    [size, size],
       iconAnchor:  [size / 2, size / 2],
@@ -262,11 +265,17 @@ function showUserLocation(L, map, userMarkerRef) {
         userMarkerRef.current.remove();
       }
 
+      const pinSvg = `
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1d65b8"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/>
+          <circle cx="12" cy="10" r="3"/>
+        </svg>`;
       userMarkerRef.current = L.marker([latitude, longitude], { icon: userIcon })
         .addTo(map)
         .bindPopup(`
           <div style="font-family:system-ui,sans-serif;text-align:center;min-width:140px;">
-            <div style="font-size:20px;margin-bottom:4px;">📍</div>
+            <div style="margin-bottom:4px;display:flex;justify-content:center;">${pinSvg}</div>
             <div style="font-weight:700;font-size:13px;color:#1d65b8;">You are here</div>
             <div style="font-size:10px;color:#888;margin-top:4px;">
               ${latitude.toFixed(5)}° N, ${longitude.toFixed(5)}° E<br>

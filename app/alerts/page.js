@@ -1,18 +1,12 @@
 'use client';
-import { useState, useEffect } from 'react';
-import Sidebar from '../../components/Sidebar';
-import Topbar from '../../components/Topbar';
+import { useState } from 'react';
+import { Download } from 'lucide-react';
 import { useHardwareData } from '../../components/useHardwareData';
 import { STATUS_COLORS } from '../../lib/lampData';
 
 export default function AlertsPage() {
-  const { lamps, isOnline, uptime, alertLog, simulating, toggleSimulate } = useHardwareData();
-  const [isDark, setIsDark] = useState(false);
+  const { alertLog, simulating, arduinoConnected } = useHardwareData();
   const [typeFilter, setTypeFilter] = useState('all');
-
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
-  }, [isDark]);
 
   const filtered = alertLog.filter(a => typeFilter === 'all' || a.type === typeFilter);
   const exportLog = () => {
@@ -23,19 +17,16 @@ export default function AlertsPage() {
   };
 
   return (
-    <div className="app">
-      <Sidebar isOnline={isOnline} alertCount={alertLog.length} />
-      <div className="main">
-        <Topbar breadcrumb="Alert Log" isOnline={isOnline} uptime={uptime} isDark={isDark}
-          onThemeToggle={() => setIsDark(d => !d)} onSimulate={toggleSimulate} simulating={simulating} />
-        <main className="content">
+    <main className="content">
           <div className="page-header">
             <div>
               <div className="page-eyebrow">Campus Network · Event Monitor</div>
               <h1 className="page-title">Alert <em>Log</em></h1>
             </div>
             <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-              <button className="export-btn" onClick={exportLog}>⬇ Export CSV</button>
+              <button className="export-btn" onClick={exportLog}>
+                <Download size={14} aria-hidden="true" /> Export CSV
+              </button>
             </div>
           </div>
 
@@ -64,7 +55,11 @@ export default function AlertsPage() {
           <div className="card">
             <div className="card-body" style={{ padding: '0' }}>
               {filtered.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '48px', color: 'var(--ink3)' }}>No events found</div>
+                <div style={{ textAlign: 'center', padding: '48px', color: 'var(--ink3)' }}>
+                  {arduinoConnected || simulating
+                    ? 'No events found'
+                    : 'Connect your Arduino to see live events.'}
+                </div>
               ) : filtered.map((a, i) => {
                 const color = STATUS_COLORS[a.type] || 'var(--blue)';
                 return (
@@ -95,7 +90,5 @@ export default function AlertsPage() {
             </div>
           </div>
         </main>
-      </div>
-    </div>
   );
 }
