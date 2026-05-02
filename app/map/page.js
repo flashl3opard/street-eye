@@ -11,11 +11,10 @@
  *     and just re-centres; the info panel updates via state.
  * ─────────────────────────────────────────────────────────────────────────
  */
-import { useState, useEffect, useCallback } from 'react';
-import Sidebar from '../../components/Sidebar';
-import Topbar from '../../components/Topbar';
+import { useState, useCallback } from 'react';
+import { Lightbulb, AlertTriangle, Zap, CircleOff, MapPin, CheckCircle2 } from 'lucide-react';
 import { useHardwareData } from '../../components/useHardwareData';
-import { STATUS_COLORS, STATUS_LABELS } from '../../lib/lampData';
+import { STATUS_COLORS, STATUS_LABELS, STATUS_ICONS } from '../../lib/lampData';
 import dynamic from 'next/dynamic';
 
 /* LampMap is browser-only (Leaflet cannot SSR) */
@@ -32,16 +31,12 @@ const LampMap = dynamic(() => import('../../components/LampMap'), {
 });
 
 export default function NetworkMapPage() {
-  const { lamps, isOnline, uptime, alertLog, simulating, toggleSimulate } = useHardwareData();
-  const [isDark, setIsDark] = useState(false);
+  const { lamps, simulating, arduinoConnected } = useHardwareData();
+  const showLive = arduinoConnected || simulating;
   /* selectedId — ID of whichever lamp is currently highlighted.
      Updated both by clicking a lamp card (below map) AND by clicking
      a map marker icon. */
   const [selectedId, setSelectedId] = useState(null);
-
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
-  }, [isDark]);
 
   const statusCounts = {
     ok: lamps.filter(l => l.status === 'ok').length,
@@ -61,36 +56,26 @@ export default function NetworkMapPage() {
     setSelectedId(lampId);
   }, []);
 
+  // (Theme effect lives in SimulationContext.)
+
   return (
-    <div className="app">
-      <Sidebar isOnline={isOnline} alertCount={alertLog.length} />
-      <div className="main">
-        <Topbar
-          breadcrumb="Network Map"
-          isOnline={isOnline}
-          uptime={uptime}
-          isDark={isDark}
-          onThemeToggle={() => setIsDark(d => !d)}
-          onSimulate={toggleSimulate}
-          simulating={simulating}
-        />
-        <main className="content">
+    <main className="content">
           {/* Page header */}
           <div className="page-header">
             <div>
               <div className="page-eyebrow">Campus Block A</div>
               <h1 className="page-title">Network <em>Map</em></h1>
             </div>
-            {/* Status legend */}
+            {/* Status legend — single iconography from lib/lampData */}
             <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
-              {Object.entries({
-                ok: ['var(--green)', '💡 Working'],
-                fault: ['var(--red)', '🔴 Faults'],
-                warn: ['var(--amber)', '🟡 Wastage'],
-                standby: ['var(--ink4)', '⚪ Standby'],
-              }).map(([k, [color, label]]) => (
+              {[
+                { k: 'ok', color: 'var(--green)', label: 'Working', Icon: Lightbulb },
+                { k: 'fault', color: 'var(--red)', label: 'Faults', Icon: AlertTriangle },
+                { k: 'warn', color: 'var(--amber)', label: 'Wastage', Icon: Zap },
+                { k: 'standby', color: 'var(--ink4)', label: 'Standby', Icon: CircleOff },
+              ].map(({ k, color, label, Icon }) => (
                 <div key={k} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--ink2)' }}>
-                  <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: color }} />
+                  <Icon size={14} color={color} aria-hidden="true" />
                   {label}: <strong style={{ color }}>{statusCounts[k]}</strong>
                 </div>
               ))}
@@ -145,7 +130,14 @@ export default function NetworkMapPage() {
                 { k: 'Status', v: selectedLamp ? STATUS_LABELS[selectedLamp.status] || selectedLamp.status : '—' },
                 { k: 'Latitude', v: selectedLamp ? `${selectedLamp.lat?.toFixed(6)}° N` : '—' },
                 { k: 'Longitude', v: selectedLamp ? `${selectedLamp.lng?.toFixed(6)}° E` : '—' },
-                { k: 'Current', v: selectedLamp ? `${(selectedLamp.current || 0).toFixed(2)}A · LDR ${selectedLamp.ldr}%` : '—' },
+                {
+                  k: 'Current',
+                  v: selectedLamp
+                    ? (showLive
+                      ? `${(selectedLamp.current || 0).toFixed(2)}A · LDR ${selectedLamp.ldr}%`
+                      : '-- · LDR --')
+                    : '—',
+                },
               ].map(row => (
                 <div key={row.k} style={{ background: 'var(--white)', padding: '12px 16px', transition: 'background 0.2s' }}>
                   <div style={{
@@ -175,35 +167,45 @@ export default function NetworkMapPage() {
           */}
           <div style={{ marginTop: '16px', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' }}>
             {lamps.map(lamp => {
-              const statusEmoji = { ok: '💡', fault: '🔴', warn: '🟡', standby: '⚪' }[lamp.status] || '💡';
+              const StatusIcon = STATUS_ICONS[lamp.status] || Lightbulb;
+              const iconColor = STATUS_COLORS[lamp.status] || 'var(--ink2)';
+              const isSelected = selectedId === lamp.id;
               return (
                 <div
                   key={lamp.id}
                   className={`lamp-card ${lamp.status}`}
                   onClick={() => handleLampSelect(lamp.id)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={e => { if (e.key === 'Enter') handleLampSelect(lamp.id); }}
                   style={{
                     cursor: 'pointer',
-                    outline: selectedId === lamp.id ? `2.5px solid ${STATUS_COLORS[lamp.status]}` : 'none',
+                    outline: isSelected ? `2.5px solid ${STATUS_COLORS[lamp.status]}` : 'none',
                     outlineOffset: '3px',
                     transition: 'outline 0.2s',
                   }}
                 >
-                  {/* Left: status emoji icon */}
-                  <span className="lamp-bulb">{statusEmoji}</span>
-                  {/* Right: text details */}
+                  <span className="lamp-bulb" aria-hidden="true">
+                    <StatusIcon size={26} color={iconColor} strokeWidth={1.8} />
+                  </span>
                   <div className="lamp-card-body">
                     <div className="lamp-num">LAMP {String(lamp.id).padStart(2, '0')}</div>
                     <div style={{ fontSize: '11px', fontWeight: '600', color: 'var(--ink)', marginBottom: '2px' }}>
                       {lamp.label}
                     </div>
-                    <div className="lamp-stat">📍 {lamp.lat?.toFixed(5)}°</div>
+                    <div className="lamp-stat" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                      <MapPin size={11} className="icon-inline" aria-hidden="true" />
+                      {lamp.lat?.toFixed(5)}°
+                    </div>
                     <div className="lamp-stat">
                       <span style={{ color: STATUS_COLORS[lamp.status] }}>
                         {STATUS_LABELS[lamp.status]}
                       </span>
                     </div>
-                    <div className="lamp-click-hint">
-                      {selectedId === lamp.id ? '✓ Selected' : 'Click to focus →'}
+                    <div className="lamp-click-hint" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                      {isSelected
+                        ? (<><CheckCircle2 size={11} aria-hidden="true" /> Selected</>)
+                        : 'Click to focus →'}
                     </div>
                   </div>
                 </div>
@@ -211,7 +213,5 @@ export default function NetworkMapPage() {
             })}
           </div>
         </main>
-      </div>
-    </div>
   );
 }

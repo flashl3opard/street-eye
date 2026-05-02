@@ -1,24 +1,20 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Sidebar from '../../components/Sidebar';
-import Topbar from '../../components/Topbar';
+import { Search, Lightbulb } from 'lucide-react';
+import SensorValue from '../../components/SensorValue';
 import { useHardwareData } from '../../components/useHardwareData';
-import { STATUS_LABELS, STATUS_BULBS, STATUS_COLORS } from '../../lib/lampData';
+import { STATUS_LABELS, STATUS_ICONS, STATUS_COLORS } from '../../lib/lampData';
 
 const FILTER_OPTIONS = ['All', 'Working', 'Faults', 'Warnings', 'Standby'];
 
 export default function LampsPage() {
   const router = useRouter();
-  const { lamps, isOnline, uptime, alertLog, simulating, toggleSimulate } = useHardwareData();
-  const [isDark, setIsDark] = useState(false);
+  const { lamps, simulating, arduinoConnected } = useHardwareData();
+  const showLive = arduinoConnected || simulating;
   const [filter, setFilter] = useState('All');
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState('id');
-
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
-  }, [isDark]);
 
   const filtered = lamps
     .filter(l => {
@@ -39,12 +35,7 @@ export default function LampsPage() {
     });
 
   return (
-    <div className="app">
-      <Sidebar isOnline={isOnline} alertCount={alertLog.length} />
-      <div className="main">
-        <Topbar breadcrumb="Lamp Grid" isOnline={isOnline} uptime={uptime} isDark={isDark}
-          onThemeToggle={() => setIsDark(d => !d)} onSimulate={toggleSimulate} simulating={simulating} />
-        <main className="content">
+    <main className="content">
           <div className="page-header">
             <div>
               <div className="page-eyebrow">Campus Network · Block A</div>
@@ -55,7 +46,7 @@ export default function LampsPage() {
           {/* Controls */}
           <div style={{ display: 'flex', gap: '12px', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap' }}>
             <div className="search-bar">
-              <span>🔍</span>
+              <Search size={14} className="icon-inline" aria-hidden="true" />
               <input type="text" placeholder="Search by name or ID…" value={search} onChange={e => setSearch(e.target.value)} />
             </div>
             <div className="filter-pills">
@@ -66,6 +57,7 @@ export default function LampsPage() {
             <select
               value={sortBy} onChange={e => setSortBy(e.target.value)}
               style={{ padding: '6px 12px', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border)', background: 'var(--cream2)', color: 'var(--ink)', fontSize: '12px', cursor: 'pointer' }}
+              aria-label="Sort lamps"
             >
               <option value="id">Sort: ID</option>
               <option value="current">Sort: Current ↓</option>
@@ -88,6 +80,7 @@ export default function LampsPage() {
               <tbody>
                 {filtered.map((lamp, i) => {
                   const color = STATUS_COLORS[lamp.status];
+                  const Icon = STATUS_ICONS[lamp.status] || Lightbulb;
                   return (
                     <tr
                       key={lamp.id}
@@ -102,7 +95,9 @@ export default function LampsPage() {
                       onMouseLeave={e => e.currentTarget.style.background = i % 2 ? 'var(--cream)' : 'var(--white)'}
                     >
                       <td style={{ padding: '12px 16px', fontWeight: '600' }}>
-                        <span style={{ marginRight: '8px' }}>{STATUS_BULBS[lamp.status]}</span>
+                        <span style={{ marginRight: '8px', display: 'inline-flex', verticalAlign: 'middle' }}>
+                          <Icon size={16} color={color} aria-hidden="true" />
+                        </span>
                         #{String(lamp.id).padStart(2, '0')}
                       </td>
                       <td style={{ padding: '12px 16px', color: 'var(--ink2)' }}>{lamp.label}</td>
@@ -113,12 +108,18 @@ export default function LampsPage() {
                           textTransform: 'uppercase', letterSpacing: '0.05em'
                         }}>{STATUS_LABELS[lamp.status]}</span>
                       </td>
-                      <td style={{ padding: '12px 16px', fontWeight: '600', color }}>{(lamp.current || 0).toFixed(2)}</td>
-                      <td style={{ padding: '12px 16px', color: 'var(--blue)', fontWeight: '600' }}>{lamp.ldr}%</td>
-                      <td style={{ padding: '12px 16px', color: 'var(--ink2)' }}>{lamp.temp || '--'}°C</td>
+                      <td style={{ padding: '12px 16px', fontWeight: '600', color }}>
+                        <SensorValue value={lamp.current} connected={showLive} format={v => v.toFixed(2)} />
+                      </td>
+                      <td style={{ padding: '12px 16px', color: 'var(--blue)', fontWeight: '600' }}>
+                        <SensorValue value={lamp.ldr} connected={showLive} unit="%" />
+                      </td>
+                      <td style={{ padding: '12px 16px', color: 'var(--ink2)' }}>
+                        <SensorValue value={lamp.temp} connected={showLive} unit="°C" />
+                      </td>
                       <td style={{ padding: '12px 16px' }}>
                         <span style={{ color: lamp.pir ? 'var(--amber)' : 'var(--green)', fontWeight: '600', fontSize: '11px' }}>
-                          {lamp.pir ? '● DETECTED' : '○ CLEAR'}
+                          {showLive ? (lamp.pir ? '● DETECTED' : '○ CLEAR') : '--'}
                         </span>
                       </td>
                       <td style={{ padding: '12px 16px' }}>
@@ -137,7 +138,5 @@ export default function LampsPage() {
             )}
           </div>
         </main>
-      </div>
-    </div>
   );
 }

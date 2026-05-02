@@ -1,19 +1,13 @@
 'use client';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import Sidebar from '../../components/Sidebar';
-import Topbar from '../../components/Topbar';
+import { Search } from 'lucide-react';
 import { useHardwareData } from '../../components/useHardwareData';
 
 export default function AllLogsPage() {
-    const { isOnline, uptime, simulating, toggleSimulate, alertLog, eventLog } = useHardwareData();
-    const [isDark, setIsDark] = useState(false);
+    const { simulating, eventLog, arduinoConnected } = useHardwareData();
     const [query, setQuery] = useState('');
     const [typeFilter, setTypeFilter] = useState('all');
     const viewportRef = useRef(null);
-
-    useEffect(() => {
-        document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
-    }, [isDark]);
 
     const filteredLogs = useMemo(() => {
         return eventLog.filter(entry => {
@@ -33,19 +27,6 @@ export default function AllLogsPage() {
     }, [filteredLogs.length]);
 
     return (
-        <div className="app">
-            <Sidebar isOnline={isOnline} alertCount={alertLog.length} />
-            <div className="main">
-                <Topbar
-                    breadcrumb="All Logs"
-                    isOnline={isOnline}
-                    uptime={uptime}
-                    isDark={isDark}
-                    onThemeToggle={() => setIsDark(v => !v)}
-                    onSimulate={toggleSimulate}
-                    simulating={simulating}
-                />
-
                 <main className="content">
                     <div className="page-header">
                         <div>
@@ -57,7 +38,7 @@ export default function AllLogsPage() {
                     <div className="card" style={{ marginBottom: '14px' }}>
                         <div className="card-body" style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
                             <div className="search-bar">
-                                <span>&gt;</span>
+                                <Search size={14} className="icon-inline" aria-hidden="true" />
                                 <input
                                     type="text"
                                     placeholder="Filter by title, message, lamp id..."
@@ -94,7 +75,11 @@ export default function AllLogsPage() {
 
                         <div className="log-cli-body" ref={viewportRef}>
                             {filteredLogs.length === 0 ? (
-                                <div className="log-cli-line dim">[waiting] No logs yet. Connect NodeMCU/ESP to start realtime logging.</div>
+                                <div className="log-cli-line dim">
+                                    {arduinoConnected || simulating
+                                        ? '[waiting] Live link active — no log entries yet.'
+                                        : '[waiting] Connect your Arduino to see live events.'}
+                                </div>
                             ) : (
                                 filteredLogs.map((entry, idx) => (
                                     <div key={entry.id || idx} className="log-cli-line">
@@ -109,7 +94,5 @@ export default function AllLogsPage() {
                         </div>
                     </div>
                 </main>
-            </div>
-        </div>
     );
 }

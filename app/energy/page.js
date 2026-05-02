@@ -1,29 +1,19 @@
 'use client';
-import { useState, useEffect } from 'react';
-import Sidebar from '../../components/Sidebar';
-import Topbar from '../../components/Topbar';
+import { Zap, BatteryWarning, BarChart3 } from 'lucide-react';
+import SensorValue from '../../components/SensorValue';
 import { useHardwareData } from '../../components/useHardwareData';
 import { ENERGY_DATA } from '../../lib/lampData';
 
 export default function EnergyPage() {
-  const { lamps, isOnline, uptime, alertLog, simulating, toggleSimulate } = useHardwareData();
-  const [isDark, setIsDark] = useState(false);
-
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
-  }, [isDark]);
+  const { lamps, simulating, arduinoConnected } = useHardwareData();
+  const showLive = arduinoConnected || simulating;
 
   const totalCurrent = lamps.reduce((a, l) => a + (l.current || 0), 0);
   const wasteCurrent = lamps.filter(l => l.status === 'warn').reduce((a, l) => a + (l.current || 0), 0);
   const efficiency = totalCurrent > 0 ? (((totalCurrent - wasteCurrent) / totalCurrent) * 100).toFixed(1) : 100;
 
   return (
-    <div className="app">
-      <Sidebar isOnline={isOnline} alertCount={alertLog.length} />
-      <div className="main">
-        <Topbar breadcrumb="Energy Analytics" isOnline={isOnline} uptime={uptime} isDark={isDark}
-          onThemeToggle={() => setIsDark(d => !d)} onSimulate={toggleSimulate} simulating={simulating} />
-        <main className="content">
+    <main className="content">
           <div className="page-header">
             <div>
               <div className="page-eyebrow">Campus Network · Energy Monitor</div>
@@ -35,20 +25,41 @@ export default function EnergyPage() {
           <div className="kpi-grid" style={{ gridTemplateColumns: 'repeat(3,1fr)', marginBottom: '24px' }}>
             <div className="kpi-card">
               <div className="bg-shape" style={{ background: 'var(--blue)' }}></div>
-              <div className="kpi-top"><span className="kpi-label">Total Current Draw</span><div className="kpi-icon" style={{ background: 'var(--blue-light)' }}>⚡</div></div>
-              <div className="kpi-val" style={{ color: 'var(--blue)' }}>{totalCurrent.toFixed(2)}</div>
+              <div className="kpi-top">
+                <span className="kpi-label">Total Current Draw</span>
+                <div className="kpi-icon" style={{ background: 'var(--blue-light)', color: 'var(--blue)' }}>
+                  <Zap size={18} aria-hidden="true" />
+                </div>
+              </div>
+              <div className="kpi-val" style={{ color: 'var(--blue)' }}>
+                <SensorValue value={totalCurrent} connected={showLive} format={v => v.toFixed(2)} />
+              </div>
               <div className="kpi-sub">amperes across {lamps.length} lamps</div>
             </div>
             <div className="kpi-card">
               <div className="bg-shape" style={{ background: 'var(--amber)' }}></div>
-              <div className="kpi-top"><span className="kpi-label">Wasted Current</span><div className="kpi-icon" style={{ background: 'var(--amber-light)' }}>🔋</div></div>
-              <div className="kpi-val" style={{ color: 'var(--amber)' }}>{wasteCurrent.toFixed(2)}</div>
+              <div className="kpi-top">
+                <span className="kpi-label">Wasted Current</span>
+                <div className="kpi-icon" style={{ background: 'var(--amber-light)', color: 'var(--amber)' }}>
+                  <BatteryWarning size={18} aria-hidden="true" />
+                </div>
+              </div>
+              <div className="kpi-val" style={{ color: 'var(--amber)' }}>
+                <SensorValue value={wasteCurrent} connected={showLive} format={v => v.toFixed(2)} />
+              </div>
               <div className="kpi-sub">amperes during daytime</div>
             </div>
             <div className="kpi-card">
               <div className="bg-shape" style={{ background: 'var(--green)' }}></div>
-              <div className="kpi-top"><span className="kpi-label">System Efficiency</span><div className="kpi-icon" style={{ background: 'var(--green-light)' }}>📊</div></div>
-              <div className="kpi-val" style={{ color: 'var(--green)' }}>{efficiency}%</div>
+              <div className="kpi-top">
+                <span className="kpi-label">System Efficiency</span>
+                <div className="kpi-icon" style={{ background: 'var(--green-light)', color: 'var(--green)' }}>
+                  <BarChart3 size={18} aria-hidden="true" />
+                </div>
+              </div>
+              <div className="kpi-val" style={{ color: 'var(--green)' }}>
+                <SensorValue value={efficiency} connected={showLive} format={v => `${v}%`} />
+              </div>
               <div className="kpi-sub">of current used appropriately</div>
             </div>
           </div>
@@ -101,7 +112,9 @@ export default function EnergyPage() {
                   <div key={lamp.id} style={{ marginBottom: '12px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
                       <span style={{ color: 'var(--ink2)', fontWeight: '500' }}>Lamp #{lamp.id} — {lamp.label}</span>
-                      <span style={{ color, fontWeight: '700' }}>{(lamp.current || 0).toFixed(2)}A</span>
+                      <span style={{ color, fontWeight: '700' }}>
+                        <SensorValue value={lamp.current} connected={showLive} format={v => v.toFixed(2)} unit="A" />
+                      </span>
                     </div>
                     <div style={{ height: '8px', background: 'var(--cream2)', borderRadius: '4px', overflow: 'hidden' }}>
                       <div style={{
@@ -115,7 +128,5 @@ export default function EnergyPage() {
             </div>
           </div>
         </main>
-      </div>
-    </div>
   );
 }
