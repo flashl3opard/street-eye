@@ -10,7 +10,7 @@ import {
 import CurrentChart from '../components/CurrentChart';
 import SensorValue from '../components/SensorValue';
 import { useHardwareData } from '../components/useHardwareData';
-import { ENERGY_DATA, STATUS_COLORS, STATUS_LABELS, STATUS_ICONS } from '../lib/lampData';
+import { ENERGY_DATA, STATUS_COLORS, STATUS_LABELS, STATUS_ICONS, LDR_BULB_THRESHOLD } from '../lib/lampData';
 
 export default function HomePage() {
   const router = useRouter();
@@ -95,341 +95,329 @@ export default function HomePage() {
   const ldrMax = lamps.length ? Math.max(...lamps.map(l => l.ldr || 0)) : 0;
   const avgTemp = lamps.length ? lamps.reduce((a, l) => a + (l.temp || 0), 0) / lamps.length : 0;
   const lastLdr = avgLdrHistory[avgLdrHistory.length - 1] || 0;
-  const darkLamps = lamps.filter(l => (l.ldr || 0) <= 30).length;
-  const brightLamps = lamps.filter(l => (l.ldr || 0) > 30).length;
+  const darkLamps = lamps.filter(l => (l.ldr || 0) < LDR_BULB_THRESHOLD).length;
+  const brightLamps = lamps.filter(l => (l.ldr || 0) >= LDR_BULB_THRESHOLD).length;
   const movingLamps = lamps.filter(l => l.pir);
   const motionActive = movingLamps.length > 0;
 
   return (
     <>
       <main className="content">
-          {/* Page header */}
-          <div className="page-header">
-            <div>
-              <div className="page-eyebrow">
-                {espId
-                  ? `ESP32 Node: ${espId}`
-                  : isBooting ? 'Connecting to ESP32…' : 'Waiting for ESP32...'}
-              </div>
-              <h1 className="page-title">Streetlamp <em>Overview</em></h1>
+        {/* Page header */}
+        <div className="page-header">
+          <div>
+            <div className="page-eyebrow">
+              {espId
+                ? `ESP32 Node: ${espId}`
+                : isBooting ? 'Connecting to ESP32…' : 'Waiting for ESP32...'}
             </div>
-            <div className="page-header-stats">
-              <div className="page-stat">
-                <div className="page-stat-val">
-                  <SensorValue
-                    value={lamps.length ? (kpi.online / lamps.length) * 100 : null}
-                    connected={showLive && lamps.length > 0}
-                    format={v => v.toFixed(1) + '%'}
-                  />
-                </div>
-                <div className="page-stat-label">Uptime today</div>
+            <h1 className="page-title">Streetlamp <em>Overview</em></h1>
+          </div>
+          <div className="page-header-stats">
+            <div className="page-stat">
+              <div className="page-stat-val">
+                <SensorValue
+                  value={lamps.length ? (kpi.online / lamps.length) * 100 : null}
+                  connected={showLive && lamps.length > 0}
+                  format={v => v.toFixed(1) + '%'}
+                />
               </div>
-              <div className="page-stat">
-                <div className="page-stat-val" style={{ fontSize: '16px', color: 'var(--ink3)' }}>
-                  {arduinoConnected ? 'Just now' : simulating ? 'Simulated' : '--'}
-                </div>
-                <div className="page-stat-label">Last sync</div>
+              <div className="page-stat-label">Uptime today</div>
+            </div>
+            <div className="page-stat">
+              <div className="page-stat-val" style={{ fontSize: '16px', color: 'var(--ink3)' }}>
+                {arduinoConnected ? 'Just now' : simulating ? 'Simulated' : '--'}
               </div>
-              <div className="page-stat">
-                <button className="export-btn" onClick={exportLog}>
-                  <Download size={14} aria-hidden="true" /> Export Log
-                </button>
+              <div className="page-stat-label">Last sync</div>
+            </div>
+            <div className="page-stat">
+              <button className="export-btn" onClick={exportLog}>
+                <Download size={14} aria-hidden="true" /> Export Log
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Alert banner */}
+        {activeAlert && alertVisible && (
+          <div className="alert-banner" style={{
+            background: activeAlert.type === 'fault' ? 'linear-gradient(135deg,#fff5f5,#fff0f0)' : 'linear-gradient(135deg,#fffaf4,#fff8ee)',
+            borderLeftColor: activeAlert.type === 'fault' ? 'var(--red)' : 'var(--amber)',
+          }}>
+            <div className="alert-icon-wrap">
+              <AlertTriangle size={20} color={activeAlert.type === 'fault' ? 'var(--red)' : 'var(--amber)'} aria-hidden="true" />
+            </div>
+            <div className="alert-body">
+              <div className="alert-title" style={{ color: activeAlert.type === 'fault' ? 'var(--red)' : 'var(--amber-dark)' }}>
+                {activeAlert.title}
+              </div>
+              <div className="alert-msg">{activeAlert.msg}</div>
+            </div>
+            <button className="alert-close" onClick={() => setAlertVisible(false)} aria-label="Dismiss alert">
+              <X size={14} aria-hidden="true" />
+            </button>
+          </div>
+        )}
+
+        {/* KPI cards */}
+        <div className="section-label">Key Metrics</div>
+        <div className="kpi-grid">
+          <KpiCard
+            label="Lamps Online"
+            icon={<Lightbulb size={18} aria-hidden="true" />}
+            accent="var(--green)"
+            accentLight="var(--green-light)"
+            value={kpi.online}
+            connected={showLive}
+            sub={`of ${lamps.length} lamps active`}
+            trend={<><Activity size={12} aria-hidden="true" /> All night</>}
+          />
+          <KpiCard
+            label="Active Faults"
+            icon={<AlertTriangle size={18} aria-hidden="true" />}
+            accent="var(--red)"
+            accentLight="var(--red-light)"
+            value={kpi.faults}
+            connected={showLive}
+            sub="needs attention"
+            trend={kpi.faults > 0
+              ? <><AlertTriangle size={12} aria-hidden="true" /> {kpi.faults} active</>
+              : <><CheckCircle2 size={12} aria-hidden="true" /> None</>}
+          />
+          <KpiCard
+            label="Avg Current"
+            icon={<Activity size={18} aria-hidden="true" />}
+            accent="var(--blue)"
+            accentLight="var(--blue-light)"
+            value={kpi.avgCurrent}
+            connected={showLive}
+            sub="amperes"
+            trend={<><Activity size={12} aria-hidden="true" /> Stable</>}
+          />
+          <KpiCard
+            label="Energy Wasted"
+            icon={<BatteryWarning size={18} aria-hidden="true" />}
+            accent="var(--amber)"
+            accentLight="var(--amber-light)"
+            value={kpi.wasted}
+            connected={showLive}
+            sub="A wastage (daytime)"
+            trend={kpi.warns > 0
+              ? <><Zap size={12} aria-hidden="true" /> {kpi.warns} lamp(s) on</>
+              : <><CheckCircle2 size={12} aria-hidden="true" /> No wastage</>}
+          />
+        </div>
+
+        {/* Sensor grid */}
+        <div className="section-label">Live Sensor Data</div>
+        <div className="sensor-grid">
+          {/* Fault status */}
+          <div className="sensor-panel sensor-panel-fault">
+            <FaultStatusCard lamps={lamps} connected={showLive} showPir={pirEnabled} />
+          </div>
+
+          {/* Current chart */}
+          <div className="card sensor-panel sensor-panel-current">
+            <div className="card-head">
+              <span className="card-title">Current Monitor — ACS712</span>
+              <span className="card-badge" style={{ background: 'var(--blue-light)', color: 'var(--blue)' }}>REAL-TIME</span>
+            </div>
+            <div className="card-body">
+              <div className="chart-container">
+                <CurrentChart data={avgHistory} yUnit="A" yDecimals={1} />
+              </div>
+              <div className="chart-meta"><span>← 30s ago</span><span>now →</span></div>
+              <div className="sensor-readings">
+                <Reading label="Avg Current" connected={showLive} value={parseFloat(kpi.avgCurrent)} format={v => v.toFixed(2)} unit="amperes" />
+                <Reading label="Faults" connected={showLive} value={kpi.faults} unit="lamps fused" valueColor="var(--red)" />
+                <Reading label="Avg Temp" connected={showLive && lamps.length > 0} value={avgTemp} format={v => v.toFixed(1)} unit="°C — DS18B20" />
               </div>
             </div>
           </div>
 
-          {/* Alert banner */}
-          {activeAlert && alertVisible && (
-            <div className="alert-banner" style={{
-              background: activeAlert.type === 'fault' ? 'linear-gradient(135deg,#fff5f5,#fff0f0)' : 'linear-gradient(135deg,#fffaf4,#fff8ee)',
-              borderLeftColor: activeAlert.type === 'fault' ? 'var(--red)' : 'var(--amber)',
-            }}>
-              <div className="alert-icon-wrap">
-                <AlertTriangle size={20} color={activeAlert.type === 'fault' ? 'var(--red)' : 'var(--amber)'} aria-hidden="true" />
+          {/* LDR chart */}
+          <div className="card sensor-panel sensor-panel-ldr">
+            <div className="card-head">
+              <span className="card-title">Light Intensity — LDR</span>
+              <span className="card-badge" style={{ background: 'var(--amber-light)', color: 'var(--amber-dark)' }}>REAL-TIME</span>
+            </div>
+            <div className="card-body">
+              <div className="chart-container">
+                <CurrentChart
+                  data={avgLdrHistory}
+                  color="rgb(232,130,12)"
+                  maxVal={100}
+                  yUnit="%"
+                  yDecimals={0}
+                />
               </div>
-              <div className="alert-body">
-                <div className="alert-title" style={{ color: activeAlert.type === 'fault' ? 'var(--red)' : 'var(--amber-dark)' }}>
-                  {activeAlert.title}
-                </div>
-                <div className="alert-msg">{activeAlert.msg}</div>
+              <div className="chart-meta"><span>← 30s ago</span><span>now →</span></div>
+              <div className="sensor-readings">
+                <Reading label="Avg Intensity" connected={showLive} value={lastLdr} format={v => v.toFixed(0)} unit="percent" />
+                <Reading label="Dark Lamps" connected={showLive} value={darkLamps} unit={`< ${LDR_BULB_THRESHOLD}% bulb light`} valueColor="var(--red)" />
+                <Reading label="Bright Lamps" connected={showLive} value={brightLamps} unit={`>= ${LDR_BULB_THRESHOLD}% bulb light`} valueColor="var(--green)" />
               </div>
-              <button className="alert-close" onClick={() => setAlertVisible(false)} aria-label="Dismiss alert">
-                <X size={14} aria-hidden="true" />
-              </button>
+            </div>
+          </div>
+
+          {/* Motion */}
+          {pirEnabled && (
+            <div className="card sensor-panel sensor-panel-motion">
+              <MotionCard
+                motionActive={motionActive}
+                movingLamps={movingLamps}
+                connected={showLive}
+                icon={<CircleDot size={18} aria-hidden="true" />}
+              />
             </div>
           )}
 
-          {/* KPI cards */}
-          <div className="section-label">Key Metrics</div>
-          <div className="kpi-grid">
-            <KpiCard
-              label="Lamps Online"
-              icon={<Lightbulb size={18} aria-hidden="true" />}
-              accent="var(--green)"
-              accentLight="var(--green-light)"
-              value={kpi.online}
-              connected={showLive}
-              sub={`of ${lamps.length} lamps active`}
-              trend={<><Activity size={12} aria-hidden="true" /> All night</>}
-            />
-            <KpiCard
-              label="Active Faults"
-              icon={<AlertTriangle size={18} aria-hidden="true" />}
-              accent="var(--red)"
-              accentLight="var(--red-light)"
-              value={kpi.faults}
-              connected={showLive}
-              sub="needs attention"
-              trend={kpi.faults > 0
-                ? <><AlertTriangle size={12} aria-hidden="true" /> {kpi.faults} active</>
-                : <><CheckCircle2 size={12} aria-hidden="true" /> None</>}
-            />
-            <KpiCard
-              label="Avg Current"
-              icon={<Activity size={18} aria-hidden="true" />}
-              accent="var(--blue)"
-              accentLight="var(--blue-light)"
-              value={kpi.avgCurrent}
-              connected={showLive}
-              sub="amperes"
-              trend={<><Activity size={12} aria-hidden="true" /> Stable</>}
-            />
-            <KpiCard
-              label="Energy Wasted"
-              icon={<BatteryWarning size={18} aria-hidden="true" />}
-              accent="var(--amber)"
-              accentLight="var(--amber-light)"
-              value={kpi.wasted}
-              connected={showLive}
-              sub="A wastage (daytime)"
-              trend={kpi.warns > 0
-                ? <><Zap size={12} aria-hidden="true" /> {kpi.warns} lamp(s) on</>
-                : <><CheckCircle2 size={12} aria-hidden="true" /> No wastage</>}
-            />
+          {/* GPS */}
+          <div className="sensor-panel sensor-panel-gps">
+            <GpsCard />
           </div>
+        </div>
 
-          {/* Sensor grid */}
-          <div className="section-label">Live Sensor Data</div>
-          <div className="sensor-grid">
-            {/* Fault status */}
-            <div className="sensor-panel sensor-panel-fault">
-              <FaultStatusCard lamps={lamps} connected={showLive} showPir={pirEnabled} />
+        {/* Lamp grid */}
+        <div className="section-label">Lamp Network</div>
+        <div style={{ marginBottom: '24px' }}>
+          <div className="lamp-section-head">
+            <div className="lamp-section-title">
+              Block A — All Lamps{' '}
+              <em style={{ fontFamily: 'var(--font-display)', fontSize: '14px', fontWeight: '300', color: 'var(--ink3)' }}>
+                ({lamps.length} units)
+              </em>
             </div>
-
-            {/* Current chart */}
-            <div className="card sensor-panel sensor-panel-current">
-              <div className="card-head">
-                <span className="card-title">Current Monitor — ACS712</span>
-                <span className="card-badge" style={{ background: 'var(--blue-light)', color: 'var(--blue)' }}>REAL-TIME</span>
-              </div>
-              <div className="card-body">
-                <div className="chart-container">
-                  <CurrentChart data={avgHistory} yUnit="A" yDecimals={1} />
-                </div>
-                <div className="chart-meta"><span>← 30s ago</span><span>now →</span></div>
-                <div className="sensor-readings">
-                  <Reading label="Avg Current" connected={showLive} value={parseFloat(kpi.avgCurrent)} format={v => v.toFixed(2)} unit="amperes" />
-                  <Reading label="Faults" connected={showLive} value={kpi.faults} unit="lamps fused" valueColor="var(--red)" />
-                  <Reading
-                    label="LDR Range"
-                    connected={showLive && lamps.length > 0}
-                    rawText={`${ldrMin}–${ldrMax}`}
-                    unit="% intensity"
-                  />
-                  <Reading label="Avg Temp" connected={showLive && lamps.length > 0} value={avgTemp} format={v => v.toFixed(1)} unit="°C — DS18B20" />
-                </div>
-              </div>
-            </div>
-
-            {/* LDR chart */}
-            <div className="card sensor-panel sensor-panel-ldr">
-              <div className="card-head">
-                <span className="card-title">Light Intensity — LDR</span>
-                <span className="card-badge" style={{ background: 'var(--amber-light)', color: 'var(--amber-dark)' }}>REAL-TIME</span>
-              </div>
-              <div className="card-body">
-                <div className="chart-container">
-                  <CurrentChart
-                    data={avgLdrHistory}
-                    color="rgb(232,130,12)"
-                    maxVal={100}
-                    yUnit="%"
-                    yDecimals={0}
-                  />
-                </div>
-                <div className="chart-meta"><span>← 30s ago</span><span>now →</span></div>
-                <div className="sensor-readings">
-                  <Reading label="Avg Intensity" connected={showLive} value={lastLdr} format={v => v.toFixed(0)} unit="percent" />
-                  <Reading label="Dark Lamps" connected={showLive} value={darkLamps} unit="≤ 30% bulb light" valueColor="var(--red)" />
-                  <Reading label="Bright Lamps" connected={showLive} value={brightLamps} unit="> 30% bulb light" valueColor="var(--green)" />
-                  <Reading
-                    label="Intensity Range"
-                    connected={showLive && lamps.length > 0}
-                    rawText={`${ldrMin}–${ldrMax}`}
-                    unit="percent"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Motion */}
-            {pirEnabled && (
-              <div className="card sensor-panel sensor-panel-motion">
-                <MotionCard
-                  motionActive={motionActive}
-                  movingLamps={movingLamps}
-                  connected={showLive}
-                  icon={<CircleDot size={18} aria-hidden="true" />}
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <div className="search-bar">
+                <Search size={14} className="icon-inline" aria-hidden="true" />
+                <input
+                  type="text"
+                  placeholder="Search lamps…"
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
                 />
               </div>
-            )}
-
-            {/* GPS */}
-            <div className="sensor-panel sensor-panel-gps">
-              <GpsCard />
-            </div>
-          </div>
-
-          {/* Lamp grid */}
-          <div className="section-label">Lamp Network</div>
-          <div style={{ marginBottom: '24px' }}>
-            <div className="lamp-section-head">
-              <div className="lamp-section-title">
-                Block A — All Lamps{' '}
-                <em style={{ fontFamily: 'var(--font-display)', fontSize: '14px', fontWeight: '300', color: 'var(--ink3)' }}>
-                  ({lamps.length} units)
-                </em>
-              </div>
-              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-                <div className="search-bar">
-                  <Search size={14} className="icon-inline" aria-hidden="true" />
-                  <input
-                    type="text"
-                    placeholder="Search lamps…"
-                    value={searchQuery}
-                    onChange={e => setSearchQuery(e.target.value)}
-                  />
-                </div>
-                <div className="filter-pills">
-                  {['All', 'Working', 'Faults', 'Warnings', 'Standby'].map(f => (
-                    <div
-                      key={f}
-                      className={`pill ${filterPill === f ? 'active-pill' : ''}`}
-                      onClick={() => setFilterPill(f)}
-                    >{f}</div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="lamp-grid">
-              {filteredLamps.map(lamp => {
-                const Icon = STATUS_ICONS[lamp.status] || Lightbulb;
-                const bc = lamp.status === 'ok' ? 'badge-ok'
-                  : lamp.status === 'fault' ? 'badge-fault'
-                    : lamp.status === 'warn' ? 'badge-warn'
-                      : 'badge-standby';
-                const iconColor = STATUS_COLORS[lamp.status] || 'var(--ink2)';
-                return (
+              <div className="filter-pills">
+                {['All', 'Working', 'Faults', 'Warnings', 'Standby'].map(f => (
                   <div
-                    key={lamp.id}
-                    className={`lamp-card ${lamp.status}`}
-                    onClick={() => router.push(`/lamp/${lamp.id}`)}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={e => { if (e.key === 'Enter') router.push(`/lamp/${lamp.id}`); }}
-                    title={`Click to view ${lamp.label}`}
-                  >
-                    <span className="lamp-bulb" aria-hidden="true">
-                      <Icon size={26} color={iconColor} strokeWidth={1.8} />
-                    </span>
-                    <div className="lamp-card-body">
-                      <div className="lamp-num">LAMP {String(lamp.id).padStart(2, '0')}</div>
-                      <span className={`lamp-status-badge ${bc}`}>{STATUS_LABELS[lamp.status]}</span>
-                      <div className="lamp-stat">
-                        I:{' '}
-                        <SensorValue
-                          value={lamp.current}
-                          connected={showLive}
-                          format={v => v.toFixed(2)}
-                          unit="A"
-                          style={{ color: lamp.status === 'fault' ? 'var(--red)' : lamp.status === 'warn' ? 'var(--amber-dark)' : '' }}
-                        />
-                      </div>
-                      <div className="lamp-stat">
-                        LDR: <SensorValue value={lamp.ldr} connected={showLive} unit="%" />
-                      </div>
-                      <div className="lamp-stat">
-                        Temp: <SensorValue value={lamp.temp} connected={showLive} unit="°C" />
-                      </div>
-                      <div className="lamp-click-hint">Click to inspect →</div>
-                    </div>
-                  </div>
-                );
-              })}
-              {filteredLamps.length === 0 && (
-                <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '32px', color: 'var(--ink3)', fontSize: '14px' }}>
-                  No lamps matching &ldquo;{searchQuery || filterPill}&rdquo;
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Bottom diagnostics */}
-          <div className="section-label">Diagnostics</div>
-          <div className="bottom-row">
-            <div className="card">
-              <div className="card-head">
-                <span className="card-title">Lamp Status Distribution — Today</span>
-                <span className="card-badge" style={{ background: 'var(--amber-light)', color: 'var(--amber-dark)' }}>24H</span>
-              </div>
-              <div className="card-body">
-                <div className="energy-bars">
-                  {ENERGY_DATA.map(d => {
-                    const t = d.ok + d.fault + d.warn + d.standby, H = 130;
-                    const okH = Math.round(d.ok / t * H), fH = Math.round(d.fault / t * H), wH = Math.round(d.warn / t * H), sH = Math.round(d.standby / t * H);
-                    return (
-                      <div className="e-col" key={d.label}>
-                        {sH > 0 && <div className="e-bar" style={{ height: `${sH}px`, background: 'var(--ink4)', opacity: 0.4 }}></div>}
-                        {wH > 0 && <div className="e-bar" style={{ height: `${wH}px`, background: 'var(--amber)' }}></div>}
-                        {fH > 0 && <div className="e-bar" style={{ height: `${fH}px`, background: 'var(--red)' }}></div>}
-                        {okH > 0 && <div className="e-bar" style={{ height: `${okH}px`, background: 'var(--green)' }}></div>}
-                        <div className="e-col-label">{d.label}</div>
-                      </div>
-                    );
-                  })}
-                </div>
-                <div className="e-legend">
-                  <div className="e-leg"><div className="e-leg-dot" style={{ background: 'var(--green)' }}></div>Working</div>
-                  <div className="e-leg"><div className="e-leg-dot" style={{ background: 'var(--red)' }}></div>Faulted</div>
-                  <div className="e-leg"><div className="e-leg-dot" style={{ background: 'var(--amber)' }}></div>Wastage</div>
-                  <div className="e-leg"><div className="e-leg-dot" style={{ background: 'var(--ink4)' }}></div>Standby</div>
-                </div>
-              </div>
-            </div>
-
-            <div className="card">
-              <div className="card-head">
-                <span className="card-title">Alert History</span>
-                <span className="card-badge" style={{ background: 'var(--cream2)', color: 'var(--ink2)' }}>{alertLog.length} EVENTS</span>
-              </div>
-              <div className="card-body" style={{ maxHeight: '280px', overflowY: 'auto' }}>
-                {alertLog.map((a, i) => (
-                  <div className="log-item" key={a.id || i}>
-                    <div className="log-indicator">
-                      <div className="log-dot" style={{ background: STATUS_COLORS[a.type] || 'var(--blue)' }}></div>
-                      <div className="log-line"></div>
-                    </div>
-                    <div className="log-body">
-                      <div className="log-time">{a.time}</div>
-                      <div className="log-title" style={{ color: STATUS_COLORS[a.type] || 'var(--blue)' }}>{a.title}</div>
-                      <div className="log-msg">{a.msg}</div>
-                    </div>
-                  </div>
+                    key={f}
+                    className={`pill ${filterPill === f ? 'active-pill' : ''}`}
+                    onClick={() => setFilterPill(f)}
+                  >{f}</div>
                 ))}
               </div>
             </div>
           </div>
+
+          <div className="lamp-grid">
+            {filteredLamps.map(lamp => {
+              const Icon = STATUS_ICONS[lamp.status] || Lightbulb;
+              const bc = lamp.status === 'ok' ? 'badge-ok'
+                : lamp.status === 'fault' ? 'badge-fault'
+                  : lamp.status === 'warn' ? 'badge-warn'
+                    : 'badge-standby';
+              const iconColor = STATUS_COLORS[lamp.status] || 'var(--ink2)';
+              return (
+                <div
+                  key={lamp.id}
+                  className={`lamp-card ${lamp.status}`}
+                  onClick={() => router.push(`/lamp/${lamp.id}`)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={e => { if (e.key === 'Enter') router.push(`/lamp/${lamp.id}`); }}
+                  title={`Click to view ${lamp.label}`}
+                >
+                  <span className="lamp-bulb" aria-hidden="true">
+                    <Icon size={26} color={iconColor} strokeWidth={1.8} />
+                  </span>
+                  <div className="lamp-card-body">
+                    <div className="lamp-num">LAMP {String(lamp.id).padStart(2, '0')}</div>
+                    <span className={`lamp-status-badge ${bc}`}>{STATUS_LABELS[lamp.status]}</span>
+                    <div className="lamp-stat">
+                      I:{' '}
+                      <SensorValue
+                        value={lamp.current}
+                        connected={showLive}
+                        format={v => v.toFixed(2)}
+                        unit="A"
+                        style={{ color: lamp.status === 'fault' ? 'var(--red)' : lamp.status === 'warn' ? 'var(--amber-dark)' : '' }}
+                      />
+                    </div>
+                    <div className="lamp-stat">
+                      LDR: <SensorValue value={lamp.ldr} connected={showLive} unit="%" />
+                    </div>
+                    <div className="lamp-stat">
+                      Temp: <SensorValue value={lamp.temp} connected={showLive} unit="°C" />
+                    </div>
+                    <div className="lamp-click-hint">Click to inspect →</div>
+                  </div>
+                </div>
+              );
+            })}
+            {filteredLamps.length === 0 && (
+              <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '32px', color: 'var(--ink3)', fontSize: '14px' }}>
+                No lamps matching &ldquo;{searchQuery || filterPill}&rdquo;
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Bottom diagnostics */}
+        <div className="section-label">Diagnostics</div>
+        <div className="bottom-row">
+          <div className="card">
+            <div className="card-head">
+              <span className="card-title">Lamp Status Distribution — Today</span>
+              <span className="card-badge" style={{ background: 'var(--amber-light)', color: 'var(--amber-dark)' }}>24H</span>
+            </div>
+            <div className="card-body">
+              <div className="energy-bars">
+                {ENERGY_DATA.map(d => {
+                  const t = d.ok + d.fault + d.warn + d.standby, H = 130;
+                  const okH = Math.round(d.ok / t * H), fH = Math.round(d.fault / t * H), wH = Math.round(d.warn / t * H), sH = Math.round(d.standby / t * H);
+                  return (
+                    <div className="e-col" key={d.label}>
+                      {sH > 0 && <div className="e-bar" style={{ height: `${sH}px`, background: 'var(--ink4)', opacity: 0.4 }}></div>}
+                      {wH > 0 && <div className="e-bar" style={{ height: `${wH}px`, background: 'var(--amber)' }}></div>}
+                      {fH > 0 && <div className="e-bar" style={{ height: `${fH}px`, background: 'var(--red)' }}></div>}
+                      {okH > 0 && <div className="e-bar" style={{ height: `${okH}px`, background: 'var(--green)' }}></div>}
+                      <div className="e-col-label">{d.label}</div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="e-legend">
+                <div className="e-leg"><div className="e-leg-dot" style={{ background: 'var(--green)' }}></div>Working</div>
+                <div className="e-leg"><div className="e-leg-dot" style={{ background: 'var(--red)' }}></div>Faulted</div>
+                <div className="e-leg"><div className="e-leg-dot" style={{ background: 'var(--amber)' }}></div>Wastage</div>
+                <div className="e-leg"><div className="e-leg-dot" style={{ background: 'var(--ink4)' }}></div>Standby</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="card">
+            <div className="card-head">
+              <span className="card-title">Alert History</span>
+              <span className="card-badge" style={{ background: 'var(--cream2)', color: 'var(--ink2)' }}>{alertLog.length} EVENTS</span>
+            </div>
+            <div className="card-body" style={{ maxHeight: '280px', overflowY: 'auto' }}>
+              {alertLog.map((a, i) => (
+                <div className="log-item" key={a.id || i}>
+                  <div className="log-indicator">
+                    <div className="log-dot" style={{ background: STATUS_COLORS[a.type] || 'var(--blue)' }}></div>
+                    <div className="log-line"></div>
+                  </div>
+                  <div className="log-body">
+                    <div className="log-time">{a.time}</div>
+                    <div className="log-title" style={{ color: STATUS_COLORS[a.type] || 'var(--blue)' }}>{a.title}</div>
+                    <div className="log-msg">{a.msg}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       </main>
 
       {/* Connection bar — global toast, lives outside .content. */}
@@ -538,9 +526,9 @@ function FaultStatusCard({ lamps, connected, showPir }) {
         <div className="logic-rows">
           <div className="logic-row">
             <span className="logic-key">LDR (Bulb Light)</span>
-            <span className={`logic-val ${(sampleLamp?.ldr || 0) > 30 ? 'ok' : 'warn'}`}>
+            <span className={`logic-val ${(sampleLamp?.ldr || 0) >= LDR_BULB_THRESHOLD ? 'ok' : 'warn'}`}>
               {connected
-                ? `${(sampleLamp?.ldr || 0) > 30 ? 'EMITTING' : 'DARK'} (${sampleLamp?.ldr || 0}%)`
+                ? `${(sampleLamp?.ldr || 0) >= LDR_BULB_THRESHOLD ? 'EMITTING' : 'DARK'} (${sampleLamp?.ldr || 0}%)`
                 : '--'}
             </span>
           </div>

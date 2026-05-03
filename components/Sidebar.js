@@ -107,7 +107,7 @@ export default function Sidebar() {
           <div className={`pulse-dot ${isOnline ? '' : 'offline'}`}></div>
           {isOnline ? 'ESP32 Connected' : 'Hardware Offline'}
         </div>
-        <div className="node-ip">172.20.10.2 · ESP32-WROOM</div>
+        <div className="node-ip">Local API · ESP32-WROOM</div>
       </div>
     </aside>
   );

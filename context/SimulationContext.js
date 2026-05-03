@@ -25,6 +25,7 @@ const SimulationContext = createContext(null);
 
 const SETTINGS_STORAGE_KEY = 'street-eye:settings';
 const COMPONENTS_STORAGE_KEY = 'street-eye:components';
+const LDR_OVERRIDE_STORAGE_KEY = 'street-eye:ldr-override';
 const SETTINGS_DEFAULTS = {
   hardwareUrl: DEFAULT_DATA_URL,
   pollIntervalMs: POLL_INTERVAL_MS,
@@ -36,6 +37,18 @@ const COMPONENT_DEFAULTS = {
   temp: true,
   gps: true,
 };
+
+const LDR_OVERRIDE_DEFAULTS = {
+  mode: 'off',
+};
+
+const LDR_OVERRIDE_RANGES = {
+  low: [3, 8],
+  medium: [14, 21],
+  high: [31, 41],
+};
+
+const CURRENT_OVERRIDE_RANGE = [2.8, 3.7];
 
 /**
  * Load the user's persisted settings, falling back to defaults for any
@@ -63,6 +76,42 @@ function loadComponentConfig() {
   } catch {
     return COMPONENT_DEFAULTS;
   }
+}
+
+function loadLdrOverride() {
+  if (typeof window === 'undefined') return LDR_OVERRIDE_DEFAULTS;
+  try {
+    const raw = window.localStorage.getItem(LDR_OVERRIDE_STORAGE_KEY);
+    if (!raw) return LDR_OVERRIDE_DEFAULTS;
+    const parsed = JSON.parse(raw);
+    return { ...LDR_OVERRIDE_DEFAULTS, ...parsed };
+  } catch {
+    return LDR_OVERRIDE_DEFAULTS;
+  }
+}
+
+function getRandomLdr(mode) {
+  const range = LDR_OVERRIDE_RANGES[mode];
+  if (!range) return null;
+  const [min, max] = range;
+  return Math.floor(min + Math.random() * (max - min + 1));
+}
+
+function getRandomCurrent() {
+  const [min, max] = CURRENT_OVERRIDE_RANGE;
+  return Math.round((min + Math.random() * (max - min)) * 100) / 100;
+}
+
+function applyAdminOverride(lamps, mode) {
+  const nextLdr = getRandomLdr(mode);
+  if (nextLdr === null) return lamps;
+  const nextCurrent = getRandomCurrent();
+  const base = lamps.length ? lamps : SIMULATED_READINGS;
+  return base.slice(0, 1).map(lamp => ({
+    ...lamp,
+    ldr: nextLdr,
+    current: nextCurrent,
+  }));
 }
 
 function isAlertEntry(entry) {
@@ -131,6 +180,21 @@ export function SimulationProvider({ children }) {
     });
   }, []);
 
+  const [ldrOverrideMode, setLdrOverrideMode] = useState(LDR_OVERRIDE_DEFAULTS.mode);
+  useEffect(() => {
+    const loaded = loadLdrOverride();
+    setLdrOverrideMode(loaded.mode);
+  }, []);
+
+  const updateLdrOverrideMode = useCallback((mode) => {
+    setLdrOverrideMode(mode);
+    try {
+      window.localStorage.setItem(LDR_OVERRIDE_STORAGE_KEY, JSON.stringify({ mode }));
+    } catch {
+      // ignore — override still applies for the current session
+    }
+  }, []);
+
   /**
    * Theme state — lives at the provider level so it survives navigation.
    * Local-only `useState` in each page reset to `false` on every route
@@ -184,10 +248,15 @@ export function SimulationProvider({ children }) {
 
   /* Internal refs */
   const prevLampsRef = useRef(lamps);
+  const lampsRef = useRef(lamps);
   const prevOnlineRef = useRef(false);
   const hasHardwareConnectionRef = useRef(false);
   const simIntervalRef = useRef(null);
   const simIdxRef = useRef(0);
+
+  useEffect(() => {
+    lampsRef.current = lamps;
+  }, [lamps]);
 
   /** Four simulation scenario states rotated every 3 s */
   const simStates = [
@@ -270,8 +339,11 @@ export function SimulationProvider({ children }) {
       }));
       const incoming = json.lamps || json;
       const merged = mergeLampData(incoming);
+      const finalLamps = ldrOverrideMode === 'off'
+        ? merged
+        : mergeLampData(applyAdminOverride(merged, ldrOverrideMode));
 
-      setLamps(merged);
+      setLamps(finalLamps);
       setIsOnline(true);
       setBootState('connected');
       hasHardwareConnectionRef.current = true;
@@ -285,11 +357,11 @@ export function SimulationProvider({ children }) {
         });
       }
       prevOnlineRef.current = true;
-      appendToHistories(merged); // update all lamp charts
+      appendToHistories(finalLamps); // update all lamp charts
       setTick(t => t + 1);
 
       /* Alert log — detect status changes */
-      merged.forEach(lamp => {
+      finalLamps.forEach(lamp => {
         const prev = prevLampsRef.current.find(p => p.id === lamp.id);
         if (prev && prev.status !== lamp.status) {
           recordEvent({
@@ -303,9 +375,15 @@ export function SimulationProvider({ children }) {
           });
         }
       });
-      prevLampsRef.current = merged;
+      prevLampsRef.current = finalLamps;
       if (json.uptime) setUptime(json.uptime);
     } catch {
+      if (ldrOverrideMode !== 'off') {
+        setIsOnline(true);
+        setBootState('connected');
+        prevOnlineRef.current = true;
+        return;
+      }
       setIsOnline(false);
       // Only flip to 'disconnected' if we're not running the simulation —
       // otherwise the user is intentionally driving fake data and the
@@ -313,7 +391,7 @@ export function SimulationProvider({ children }) {
       setBootState(prev => (prev === 'simulating' ? prev : 'disconnected'));
       prevOnlineRef.current = false;
     }
-  }, [simulating, appendToHistories, recordEvent, settings.hardwareUrl]);
+  }, [simulating, appendToHistories, recordEvent, settings.hardwareUrl, ldrOverrideMode]);
 
   useEffect(() => {
     fetchData();
@@ -355,8 +433,11 @@ export function SimulationProvider({ children }) {
         }));
 
         const merged = mergeLampData(jitteredState);
-        setLamps(merged);
-        appendToHistories(merged); // append to EACH lamp's history in global state
+        const finalLamps = ldrOverrideMode === 'off'
+          ? merged
+          : mergeLampData(applyAdminOverride(merged, ldrOverrideMode));
+        setLamps(finalLamps);
+        appendToHistories(finalLamps); // append to EACH lamp's history in global state
         setTick(t => t + 1);
         simIdxRef.current++;
       };
@@ -364,7 +445,40 @@ export function SimulationProvider({ children }) {
       apply(); // immediate first tick
       simIntervalRef.current = setInterval(apply, 3000);
     }
-  }, [simulating, appendToHistories, recordEvent]);
+  }, [simulating, appendToHistories, recordEvent, ldrOverrideMode]);
+
+  /* ── Admin LDR override loop ── */
+  useEffect(() => {
+    if (ldrOverrideMode === 'off') return undefined;
+
+    let timerId;
+
+    const tickOverride = () => {
+      const base = lampsRef.current.length ? lampsRef.current : SIMULATED_READINGS;
+      const overridden = mergeLampData(applyAdminOverride(base, ldrOverrideMode));
+      setLamps(overridden);
+      appendToHistories(overridden);
+      setTick(t => t + 1);
+      setIsOnline(true);
+      setBootState('connected');
+      prevOnlineRef.current = true;
+
+      timerId = setTimeout(tickOverride, 3000 + Math.random() * 1000);
+    };
+
+    tickOverride();
+
+    return () => clearTimeout(timerId);
+  }, [ldrOverrideMode, appendToHistories]);
+
+  useEffect(() => {
+    if (ldrOverrideMode !== 'off') return;
+    if (!hasHardwareConnectionRef.current && !simulating) {
+      setIsOnline(false);
+      setBootState('disconnected');
+      prevOnlineRef.current = false;
+    }
+  }, [ldrOverrideMode, simulating]);
 
   /* ── KPI summary ── */
   const kpi = {
@@ -404,6 +518,8 @@ export function SimulationProvider({ children }) {
     updateSettings,
     componentConfig,
     updateComponentConfig,
+    ldrOverrideMode,
+    updateLdrOverrideMode,
     hardwareMeta,
     sidebarOpen,
     toggleSidebar,
