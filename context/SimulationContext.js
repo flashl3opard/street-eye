@@ -67,51 +67,19 @@ const CURRENT_OVERRIDE_RANGE = [2.8, 3.7];
  * field that isn't present (or if localStorage is unavailable).
  */
 function loadSettings() {
-  if (typeof window === 'undefined') return SETTINGS_DEFAULTS;
-  try {
-    const raw = window.localStorage.getItem(SETTINGS_STORAGE_KEY);
-    if (!raw) return SETTINGS_DEFAULTS;
-    const parsed = JSON.parse(raw);
-    return { ...SETTINGS_DEFAULTS, ...parsed };
-  } catch {
-    return SETTINGS_DEFAULTS;
-  }
+  return SETTINGS_DEFAULTS;
 }
 
 function loadComponentConfig() {
-  if (typeof window === 'undefined') return COMPONENT_DEFAULTS;
-  try {
-    const raw = window.localStorage.getItem(COMPONENTS_STORAGE_KEY);
-    if (!raw) return COMPONENT_DEFAULTS;
-    const parsed = JSON.parse(raw);
-    return { ...COMPONENT_DEFAULTS, ...parsed };
-  } catch {
-    return COMPONENT_DEFAULTS;
-  }
+  return COMPONENT_DEFAULTS;
 }
 
 function loadLdrOverride() {
-  if (typeof window === 'undefined') return LDR_OVERRIDE_DEFAULTS;
-  try {
-    const raw = window.localStorage.getItem(LDR_OVERRIDE_STORAGE_KEY);
-    if (!raw) return LDR_OVERRIDE_DEFAULTS;
-    const parsed = JSON.parse(raw);
-    return { ...LDR_OVERRIDE_DEFAULTS, ...parsed };
-  } catch {
-    return LDR_OVERRIDE_DEFAULTS;
-  }
+  return LDR_OVERRIDE_DEFAULTS;
 }
 
 function loadForceConnected() {
-  if (typeof window === 'undefined') return FORCE_CONNECTED_DEFAULTS;
-  try {
-    const raw = window.localStorage.getItem(FORCE_CONNECTED_STORAGE_KEY);
-    if (!raw) return FORCE_CONNECTED_DEFAULTS;
-    const parsed = JSON.parse(raw);
-    return { ...FORCE_CONNECTED_DEFAULTS, ...parsed };
-  } catch {
-    return FORCE_CONNECTED_DEFAULTS;
-  }
+  return FORCE_CONNECTED_DEFAULTS;
 }
 
 function getRandomLdr(mode) {
@@ -176,15 +144,7 @@ export function SimulationProvider({ children }) {
   }, []);
 
   const updateSettings = useCallback((patch) => {
-    setSettings(prev => {
-      const next = { ...prev, ...patch };
-      try {
-        window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(next));
-      } catch {
-        // ignore — settings still apply for the current session
-      }
-      return next;
-    });
+    setSettings(prev => ({ ...prev, ...patch }));
   }, []);
 
   const [componentConfig, setComponentConfig] = useState(COMPONENT_DEFAULTS);
@@ -193,15 +153,7 @@ export function SimulationProvider({ children }) {
   }, []);
 
   const updateComponentConfig = useCallback((patch) => {
-    setComponentConfig(prev => {
-      const next = { ...prev, ...patch };
-      try {
-        window.localStorage.setItem(COMPONENTS_STORAGE_KEY, JSON.stringify(next));
-      } catch {
-        // ignore — config still applies for the current session
-      }
-      return next;
-    });
+    setComponentConfig(prev => ({ ...prev, ...patch }));
   }, []);
 
   const [ldrOverrideMode, setLdrOverrideMode] = useState(LDR_OVERRIDE_DEFAULTS.mode);
@@ -212,11 +164,6 @@ export function SimulationProvider({ children }) {
 
   const updateLdrOverrideMode = useCallback((mode) => {
     setLdrOverrideMode(mode);
-    try {
-      window.localStorage.setItem(LDR_OVERRIDE_STORAGE_KEY, JSON.stringify({ mode }));
-    } catch {
-      // ignore — override still applies for the current session
-    }
     if (isFirebaseReady()) {
       updateAdminSettings({ ldrOverrideMode: mode });
     }
@@ -231,11 +178,6 @@ export function SimulationProvider({ children }) {
   const updateForceConnected = useCallback((mode) => {
     const nextMode = mode === 'on' ? 'on' : 'off';
     setForceConnected(nextMode);
-    try {
-      window.localStorage.setItem(FORCE_CONNECTED_STORAGE_KEY, JSON.stringify({ mode: nextMode }));
-    } catch {
-      // ignore — override still applies for the current session
-    }
     if (isFirebaseReady()) {
       updateAdminSettings({ forceConnected: nextMode });
     }
@@ -380,6 +322,12 @@ export function SimulationProvider({ children }) {
   /* ── ESP32 hardware poll ── */
   const fetchData = useCallback(async () => {
     if (simulating) return;
+    if (forceConnected === 'on') {
+      setIsOnline(true);
+      setBootState('connected');
+      prevOnlineRef.current = true;
+      return;
+    }
     if (forceConnected === 'off') {
       setIsOnline(false);
       setBootState('disconnected');
@@ -439,6 +387,12 @@ export function SimulationProvider({ children }) {
       prevLampsRef.current = finalLamps;
       if (json.uptime) setUptime(json.uptime);
     } catch {
+      if (forceConnected === 'on') {
+        setIsOnline(true);
+        setBootState('connected');
+        prevOnlineRef.current = true;
+        return;
+      }
       if (ldrOverrideMode !== 'off') {
         setIsOnline(true);
         setBootState('connected');
