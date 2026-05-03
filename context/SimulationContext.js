@@ -19,7 +19,14 @@ import {
   DEFAULT_DATA_URL, POLL_INTERVAL_MS,
   SIMULATED_READINGS, mergeLampData,
 } from '../lib/lampData';
-import { appendLog, makeLogEntry, subscribeToLogs } from '../lib/firebase';
+import {
+  appendLog,
+  makeLogEntry,
+  subscribeToLogs,
+  subscribeToAdminSettings,
+  updateAdminSettings,
+  isFirebaseReady,
+} from '../lib/firebase';
 
 const SimulationContext = createContext(null);
 
@@ -210,6 +217,9 @@ export function SimulationProvider({ children }) {
     } catch {
       // ignore — override still applies for the current session
     }
+    if (isFirebaseReady()) {
+      updateAdminSettings({ ldrOverrideMode: mode });
+    }
   }, []);
 
   const [forceConnected, setForceConnected] = useState(FORCE_CONNECTED_DEFAULTS.mode);
@@ -226,6 +236,18 @@ export function SimulationProvider({ children }) {
     } catch {
       // ignore — override still applies for the current session
     }
+    if (isFirebaseReady()) {
+      updateAdminSettings({ forceConnected: nextMode });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isFirebaseReady()) return undefined;
+
+    return subscribeToAdminSettings((settings) => {
+      if (settings.ldrOverrideMode) setLdrOverrideMode(settings.ldrOverrideMode);
+      if (settings.forceConnected) setForceConnected(settings.forceConnected);
+    });
   }, []);
 
   /**
