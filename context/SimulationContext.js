@@ -26,6 +26,7 @@ const SimulationContext = createContext(null);
 const SETTINGS_STORAGE_KEY = 'street-eye:settings';
 const COMPONENTS_STORAGE_KEY = 'street-eye:components';
 const LDR_OVERRIDE_STORAGE_KEY = 'street-eye:ldr-override';
+const FORCE_CONNECTED_STORAGE_KEY = 'street-eye:force-connected';
 const SETTINGS_DEFAULTS = {
   hardwareUrl: DEFAULT_DATA_URL,
   pollIntervalMs: POLL_INTERVAL_MS,
@@ -39,6 +40,10 @@ const COMPONENT_DEFAULTS = {
 };
 
 const LDR_OVERRIDE_DEFAULTS = {
+  mode: 'off',
+};
+
+const FORCE_CONNECTED_DEFAULTS = {
   mode: 'off',
 };
 
@@ -87,6 +92,18 @@ function loadLdrOverride() {
     return { ...LDR_OVERRIDE_DEFAULTS, ...parsed };
   } catch {
     return LDR_OVERRIDE_DEFAULTS;
+  }
+}
+
+function loadForceConnected() {
+  if (typeof window === 'undefined') return FORCE_CONNECTED_DEFAULTS;
+  try {
+    const raw = window.localStorage.getItem(FORCE_CONNECTED_STORAGE_KEY);
+    if (!raw) return FORCE_CONNECTED_DEFAULTS;
+    const parsed = JSON.parse(raw);
+    return { ...FORCE_CONNECTED_DEFAULTS, ...parsed };
+  } catch {
+    return FORCE_CONNECTED_DEFAULTS;
   }
 }
 
@@ -190,6 +207,22 @@ export function SimulationProvider({ children }) {
     setLdrOverrideMode(mode);
     try {
       window.localStorage.setItem(LDR_OVERRIDE_STORAGE_KEY, JSON.stringify({ mode }));
+    } catch {
+      // ignore — override still applies for the current session
+    }
+  }, []);
+
+  const [forceConnected, setForceConnected] = useState(FORCE_CONNECTED_DEFAULTS.mode);
+  useEffect(() => {
+    const loaded = loadForceConnected();
+    setForceConnected(loaded.mode || 'off');
+  }, []);
+
+  const updateForceConnected = useCallback((mode) => {
+    const nextMode = mode === 'on' ? 'on' : 'off';
+    setForceConnected(nextMode);
+    try {
+      window.localStorage.setItem(FORCE_CONNECTED_STORAGE_KEY, JSON.stringify({ mode: nextMode }));
     } catch {
       // ignore — override still applies for the current session
     }
@@ -325,6 +358,12 @@ export function SimulationProvider({ children }) {
   /* ── ESP32 hardware poll ── */
   const fetchData = useCallback(async () => {
     if (simulating) return;
+    if (forceConnected === 'off') {
+      setIsOnline(false);
+      setBootState('disconnected');
+      prevOnlineRef.current = false;
+      return;
+    }
     try {
       const res = await fetch(settings.hardwareUrl, { signal: AbortSignal.timeout(2500) });
       if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -391,7 +430,7 @@ export function SimulationProvider({ children }) {
       setBootState(prev => (prev === 'simulating' ? prev : 'disconnected'));
       prevOnlineRef.current = false;
     }
-  }, [simulating, appendToHistories, recordEvent, settings.hardwareUrl, ldrOverrideMode]);
+  }, [simulating, appendToHistories, recordEvent, settings.hardwareUrl, ldrOverrideMode, forceConnected]);
 
   useEffect(() => {
     fetchData();
@@ -449,7 +488,7 @@ export function SimulationProvider({ children }) {
 
   /* ── Admin LDR override loop ── */
   useEffect(() => {
-    if (ldrOverrideMode === 'off') return undefined;
+    if (ldrOverrideMode === 'off' || forceConnected === 'off') return undefined;
 
     let timerId;
 
@@ -469,16 +508,32 @@ export function SimulationProvider({ children }) {
     tickOverride();
 
     return () => clearTimeout(timerId);
-  }, [ldrOverrideMode, appendToHistories]);
+  }, [ldrOverrideMode, forceConnected, appendToHistories]);
 
   useEffect(() => {
     if (ldrOverrideMode !== 'off') return;
-    if (!hasHardwareConnectionRef.current && !simulating) {
+    if (!hasHardwareConnectionRef.current && !simulating && forceConnected !== 'on') {
       setIsOnline(false);
       setBootState('disconnected');
       prevOnlineRef.current = false;
     }
-  }, [ldrOverrideMode, simulating]);
+  }, [ldrOverrideMode, simulating, forceConnected]);
+
+  useEffect(() => {
+    if (forceConnected === 'on') {
+      setIsOnline(true);
+      setBootState('connected');
+      prevOnlineRef.current = true;
+      return;
+    }
+
+    if (forceConnected === 'off') {
+      setIsOnline(false);
+      setBootState('disconnected');
+      prevOnlineRef.current = false;
+      return;
+    }
+  }, [forceConnected]);
 
   /* ── KPI summary ── */
   const kpi = {
@@ -498,7 +553,11 @@ export function SimulationProvider({ children }) {
    * data, so the spec's "show dashes when not connected" rule still holds
    * unless the user is on a screen that explicitly opts into sim values.
    */
-  const arduinoConnected = bootState === 'connected';
+  const arduinoConnected = forceConnected === 'on'
+    ? true
+    : forceConnected === 'off'
+      ? false
+      : bootState === 'connected';
 
   const value = {
     lamps, espId, isOnline, uptime, alertLog,
@@ -520,6 +579,8 @@ export function SimulationProvider({ children }) {
     updateComponentConfig,
     ldrOverrideMode,
     updateLdrOverrideMode,
+    forceConnected,
+    updateForceConnected,
     hardwareMeta,
     sidebarOpen,
     toggleSidebar,
