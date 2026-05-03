@@ -24,8 +24,9 @@ export default function LampDetailPage() {
   const router = useRouter();
   const lampId = parseInt(params.id, 10);
 
-  const { lamps, alertLog, simulating, arduinoConnected } = useHardwareData();
+  const { lamps, alertLog, simulating, arduinoConnected, componentConfig } = useHardwareData();
   const showLive = arduinoConnected || simulating;
+  const pirEnabled = componentConfig?.pir !== false;
 
   const lamp = lamps.find(l => l.id === lampId);
   // useLampHistory now reads from global context — no currentValue arg needed
@@ -121,7 +122,9 @@ export default function LampDetailPage() {
                 <div className="logic-row" style={{ padding: '6px 0', border: 'none' }}>
                   <span className="logic-key" style={{ fontSize: '11px' }}>PIR</span>
                   <span style={{ fontWeight: '700', fontSize: '12px', color: lamp.pir ? 'var(--amber)' : 'var(--green)' }}>
-                    {showLive ? (lamp.pir ? 'DETECTED' : 'CLEAR') : '--'}
+                    {pirEnabled
+                      ? (showLive ? (lamp.pir ? 'IN MOTION' : 'STABLE') : '--')
+                      : 'DISABLED'}
                   </span>
                 </div>
               </div>

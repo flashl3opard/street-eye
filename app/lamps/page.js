@@ -10,8 +10,9 @@ const FILTER_OPTIONS = ['All', 'Working', 'Faults', 'Warnings', 'Standby'];
 
 export default function LampsPage() {
   const router = useRouter();
-  const { lamps, simulating, arduinoConnected } = useHardwareData();
+  const { lamps, simulating, arduinoConnected, componentConfig } = useHardwareData();
   const showLive = arduinoConnected || simulating;
+  const pirEnabled = componentConfig?.pir !== false;
   const [filter, setFilter] = useState('All');
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState('id');
@@ -119,7 +120,9 @@ export default function LampsPage() {
                       </td>
                       <td style={{ padding: '12px 16px' }}>
                         <span style={{ color: lamp.pir ? 'var(--amber)' : 'var(--green)', fontWeight: '600', fontSize: '11px' }}>
-                          {showLive ? (lamp.pir ? '● DETECTED' : '○ CLEAR') : '--'}
+                          {pirEnabled
+                            ? (showLive ? (lamp.pir ? '● MOTION' : '○ STABLE') : '--')
+                            : 'DISABLED'}
                         </span>
                       </td>
                       <td style={{ padding: '12px 16px' }}>

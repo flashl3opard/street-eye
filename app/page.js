@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import {
   Lightbulb, Zap, Activity, BatteryWarning, AlertTriangle, CheckCircle2,
   Search, Download, X, MapPin, Navigation, Hourglass, MapPinOff, Map as MapIcon,
+  CircleDot,
 } from 'lucide-react';
 
 import CurrentChart from '../components/CurrentChart';
@@ -16,7 +17,7 @@ export default function HomePage() {
   const {
     lamps, espId, isOnline, alertLog, eventLog,
     simulating, kpi, lampHistories, lampLdrHistories,
-    bootState, arduinoConnected,
+    bootState, arduinoConnected, componentConfig,
   } = useHardwareData();
   const [filterPill, setFilterPill] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
@@ -87,6 +88,7 @@ export default function HomePage() {
   // honours the "show dashes when not connected" spec.
   const showLive = arduinoConnected || simulating;
   const isBooting = bootState === 'connecting' && lamps.length === 0;
+  const pirEnabled = componentConfig?.pir !== false;
 
   // Pre-computed LDR aggregates so the JSX below stays tidy.
   const ldrMin = lamps.length ? Math.min(...lamps.map(l => l.ldr || 0)) : 0;
@@ -95,6 +97,8 @@ export default function HomePage() {
   const lastLdr = avgLdrHistory[avgLdrHistory.length - 1] || 0;
   const darkLamps = lamps.filter(l => (l.ldr || 0) <= 30).length;
   const brightLamps = lamps.filter(l => (l.ldr || 0) > 30).length;
+  const movingLamps = lamps.filter(l => l.pir);
+  const motionActive = movingLamps.length > 0;
 
   return (
     <>
@@ -209,7 +213,7 @@ export default function HomePage() {
           <div className="sensor-grid">
             {/* Fault status */}
             <div className="sensor-panel sensor-panel-fault">
-              <FaultStatusCard lamps={lamps} connected={showLive} />
+              <FaultStatusCard lamps={lamps} connected={showLive} showPir={pirEnabled} />
             </div>
 
             {/* Current chart */}
@@ -267,6 +271,18 @@ export default function HomePage() {
                 </div>
               </div>
             </div>
+
+            {/* Motion */}
+            {pirEnabled && (
+              <div className="card sensor-panel sensor-panel-motion">
+                <MotionCard
+                  motionActive={motionActive}
+                  movingLamps={movingLamps}
+                  connected={showLive}
+                  icon={<CircleDot size={18} aria-hidden="true" />}
+                />
+              </div>
+            )}
 
             {/* GPS */}
             <div className="sensor-panel sensor-panel-gps">
@@ -474,7 +490,7 @@ function Reading({ label, value, rawText, connected, format, unit, valueColor })
   );
 }
 
-function FaultStatusCard({ lamps, connected }) {
+function FaultStatusCard({ lamps, connected, showPir }) {
   const faultLamp = lamps.find(l => l.status === 'fault');
   const warnLamp = lamps.find(l => l.status === 'warn');
   const primary = faultLamp || warnLamp;
@@ -534,12 +550,14 @@ function FaultStatusCard({ lamps, connected }) {
               <SensorValue value={sampleLamp?.current} connected={connected} format={v => v.toFixed(2)} unit=" A" />
             </span>
           </div>
-          <div className="logic-row">
-            <span className="logic-key">PIR Motion</span>
-            <span className={`logic-val ${sampleLamp?.pir ? 'warn' : 'ok'}`}>
-              {connected ? (sampleLamp?.pir ? 'DETECTED' : 'CLEAR') : '--'}
-            </span>
-          </div>
+          {showPir && (
+            <div className="logic-row">
+              <span className="logic-key">PIR Motion</span>
+              <span className={`logic-val ${sampleLamp?.pir ? 'warn' : 'ok'}`}>
+                {connected ? (sampleLamp?.pir ? 'IN MOTION' : 'STABLE') : '--'}
+              </span>
+            </div>
+          )}
           <div className="logic-row">
             <span className="logic-key">Temperature</span>
             <span className="logic-val neutral">
@@ -549,6 +567,49 @@ function FaultStatusCard({ lamps, connected }) {
         </div>
       </div>
     </div>
+  );
+}
+
+function MotionCard({ motionActive, movingLamps, connected, icon }) {
+  const label = motionActive ? 'Motion Detected' : 'Stable';
+  const accent = motionActive ? 'var(--amber)' : 'var(--green)';
+  const badgeBg = motionActive ? 'var(--amber-light)' : 'var(--green-light)';
+  const badgeLabel = motionActive ? 'IN MOTION' : 'STABLE';
+
+  return (
+    <>
+      <div className="card-head">
+        <span className="card-title">Motion Sensor</span>
+        <span className="card-badge" style={{ background: badgeBg, color: accent }}>{badgeLabel}</span>
+      </div>
+      <div className="card-body">
+        <div className="motion-status">
+          <div className={`motion-orb ${motionActive && connected ? 'active' : ''}`} style={{ background: accent }}></div>
+          <div>
+            <div className="motion-label" style={{ color: accent }}>{connected ? label : '--'}</div>
+            <div className="motion-sub">
+              {connected
+                ? `${movingLamps.length} lamp${movingLamps.length === 1 ? '' : 's'} reporting movement`
+                : 'Waiting for live data'}
+            </div>
+          </div>
+          <div className="motion-icon" style={{ color: accent }}>{icon}</div>
+        </div>
+
+        <div className="motion-list">
+          {connected && movingLamps.length > 0 ? (
+            movingLamps.slice(0, 6).map(l => (
+              <span className="motion-chip" key={l.id}>L{String(l.id).padStart(2, '0')}</span>
+            ))
+          ) : (
+            <span className="motion-empty">No movement right now</span>
+          )}
+          {connected && movingLamps.length > 6 && (
+            <span className="motion-chip">+{movingLamps.length - 6}</span>
+          )}
+        </div>
+      </div>
+    </>
   );
 }
 

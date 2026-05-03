@@ -744,15 +744,19 @@ body::after {
 }
 
 .sensor-panel-fault {
-  grid-column: span 4;
+  grid-column: span 3;
 }
 
 .sensor-panel-current {
-  grid-column: span 4;
+  grid-column: span 3;
 }
 
 .sensor-panel-ldr {
-  grid-column: span 4;
+  grid-column: span 3;
+}
+
+.sensor-panel-motion {
+  grid-column: span 3;
 }
 
 .sensor-panel-gps {
@@ -798,6 +802,173 @@ body::after {
 
 .card-body {
   padding: 20px;
+}
+
+/* ── Config page ── */
+.config-tile {
+  background: var(--cream2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  padding: 12px 14px;
+  min-height: 64px;
+}
+
+.config-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink3);
+  margin-bottom: 6px;
+}
+
+.config-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.config-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px;
+  background: var(--white);
+  box-shadow: var(--shadow-sm);
+}
+
+.config-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.config-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--cream2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink2);
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.config-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.config-hint {
+  font-size: 11px;
+  color: var(--ink3);
+}
+
+.config-status {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.config-pill {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.config-pill.ok {
+  background: var(--green-light);
+  color: var(--green);
+  border-color: rgba(26, 138, 82, 0.2);
+}
+
+.config-pill.warn {
+  background: var(--amber-light);
+  color: var(--amber-dark);
+  border-color: rgba(232, 130, 12, 0.2);
+}
+
+.config-pill.off {
+  background: var(--cream2);
+  color: var(--ink3);
+}
+
+.config-switch {
+  margin-left: auto;
+  width: 44px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--cream3);
+  border: 1px solid var(--border);
+  position: relative;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.config-switch-dot {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--white);
+  border: 1px solid var(--border);
+  transition: transform 0.2s ease, background 0.2s;
+}
+
+.config-switch.active {
+  background: var(--green-light);
+  border-color: rgba(26, 138, 82, 0.3);
+}
+
+.config-switch.active .config-switch-dot {
+  transform: translateX(20px);
+  background: var(--green);
+  border-color: rgba(26, 138, 82, 0.3);
+}
+
+.config-reset {
+  background: var(--cream2);
+  border: 1px solid var(--border);
+  color: var(--ink2);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 6px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.config-reset:hover {
+  background: var(--cream3);
+  color: var(--ink);
+}
+
+.config-note {
+  margin: 12px 20px 18px;
+  padding: 10px 12px;
+  border-radius: var(--radius-xs);
+  border: 1px solid rgba(232, 130, 12, 0.2);
+  background: var(--amber-light);
+  color: var(--amber-dark);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.config-note.ok {
+  background: var(--green-light);
+  border-color: rgba(26, 138, 82, 0.2);
+  color: var(--green);
 }
 
 /* ── STATUS RING ── */
@@ -885,6 +1056,88 @@ body::after {
 
 .logic-val.neutral {
   color: var(--ink3);
+}
+
+/* ── Motion card ── */
+.motion-status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--cream2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  position: relative;
+  overflow: hidden;
+}
+
+.motion-orb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  position: relative;
+}
+
+.motion-orb.active::after {
+  content: '';
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.2;
+  animation: motionPulse 1.4s ease-in-out infinite;
+}
+
+.motion-label {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.motion-sub {
+  font-size: 11px;
+  color: var(--ink3);
+}
+
+.motion-icon {
+  margin-left: auto;
+  background: var(--cream3);
+  border-radius: 10px;
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+}
+
+.motion-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.motion-chip {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 4px 8px;
+  background: var(--cream2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--ink2);
+}
+
+.motion-empty {
+  font-size: 11px;
+  color: var(--ink3);
+}
+
+@keyframes motionPulse {
+  0% { transform: scale(0.7); opacity: 0.35; }
+  70% { transform: scale(1.5); opacity: 0.05; }
+  100% { transform: scale(1.5); opacity: 0; }
 }
 
 /* ── GPS ── */
@@ -1665,7 +1918,8 @@ canvas.chart-canvas {
 
   .sensor-panel-fault,
   .sensor-panel-current,
-  .sensor-panel-ldr {
+  .sensor-panel-ldr,
+  .sensor-panel-motion {
     grid-column: span 6;
   }
 
@@ -1686,6 +1940,7 @@ canvas.chart-canvas {
   .sensor-panel-fault,
   .sensor-panel-current,
   .sensor-panel-ldr,
+  .sensor-panel-motion,
   .sensor-panel-gps {
     grid-column: span 12;
   }

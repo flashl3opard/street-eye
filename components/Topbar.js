@@ -12,6 +12,7 @@ const STATIC_BREADCRUMBS = {
   '/logs': 'All Logs',
   '/energy': 'Energy Analytics',
   '/settings': 'Settings',
+  '/config': 'Hardware Config',
 };
 
 /**

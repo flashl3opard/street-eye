@@ -24,9 +24,17 @@ import { appendLog, makeLogEntry, subscribeToLogs } from '../lib/firebase';
 const SimulationContext = createContext(null);
 
 const SETTINGS_STORAGE_KEY = 'street-eye:settings';
+const COMPONENTS_STORAGE_KEY = 'street-eye:components';
 const SETTINGS_DEFAULTS = {
   hardwareUrl: DEFAULT_DATA_URL,
   pollIntervalMs: POLL_INTERVAL_MS,
+};
+const COMPONENT_DEFAULTS = {
+  current: true,
+  ldr: true,
+  pir: true,
+  temp: true,
+  gps: true,
 };
 
 /**
@@ -45,6 +53,18 @@ function loadSettings() {
   }
 }
 
+function loadComponentConfig() {
+  if (typeof window === 'undefined') return COMPONENT_DEFAULTS;
+  try {
+    const raw = window.localStorage.getItem(COMPONENTS_STORAGE_KEY);
+    if (!raw) return COMPONENT_DEFAULTS;
+    const parsed = JSON.parse(raw);
+    return { ...COMPONENT_DEFAULTS, ...parsed };
+  } catch {
+    return COMPONENT_DEFAULTS;
+  }
+}
+
 function isAlertEntry(entry) {
   return entry.type !== 'info';
 }
@@ -57,6 +77,11 @@ export function SimulationProvider({ children }) {
   const [uptime, setUptime] = useState(0);
   const [eventLog, setEventLog] = useState([]);
   const [simulating, setSimulating] = useState(false);
+  const [hardwareMeta, setHardwareMeta] = useState({
+    deviceNumber: null,
+    gps: null,
+    lastReadingAt: null,
+  });
   /**
    * bootState — high-level connection lifecycle the UI can render against.
    *   'connecting'   : initial mount, no fetch attempt has resolved yet
@@ -84,6 +109,23 @@ export function SimulationProvider({ children }) {
         window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(next));
       } catch {
         // ignore — settings still apply for the current session
+      }
+      return next;
+    });
+  }, []);
+
+  const [componentConfig, setComponentConfig] = useState(COMPONENT_DEFAULTS);
+  useEffect(() => {
+    setComponentConfig(loadComponentConfig());
+  }, []);
+
+  const updateComponentConfig = useCallback((patch) => {
+    setComponentConfig(prev => {
+      const next = { ...prev, ...patch };
+      try {
+        window.localStorage.setItem(COMPONENTS_STORAGE_KEY, JSON.stringify(next));
+      } catch {
+        // ignore — config still applies for the current session
       }
       return next;
     });
@@ -221,6 +263,11 @@ export function SimulationProvider({ children }) {
       if (json.unique_id) {
         setEspId(json.unique_id);
       }
+      setHardwareMeta(prev => ({
+        deviceNumber: json.device_number ?? prev.deviceNumber ?? null,
+        gps: json.gps ?? prev.gps ?? null,
+        lastReadingAt: Date.now(),
+      }));
       const incoming = json.lamps || json;
       const merged = mergeLampData(incoming);
 
@@ -289,6 +336,11 @@ export function SimulationProvider({ children }) {
       setIsOnline(true);
       setBootState('simulating');
       setEspId('SIM_ESP32_01');
+      setHardwareMeta({
+        deviceNumber: 'SIM',
+        gps: null,
+        lastReadingAt: Date.now(),
+      });
       prevOnlineRef.current = true;
       simIdxRef.current = 0;
 
@@ -350,6 +402,9 @@ export function SimulationProvider({ children }) {
     toggleTheme,
     settings,
     updateSettings,
+    componentConfig,
+    updateComponentConfig,
+    hardwareMeta,
     sidebarOpen,
     toggleSidebar,
     closeSidebar,
