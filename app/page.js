@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Lightbulb, Zap, Activity, BatteryWarning, AlertTriangle, CheckCircle2,
@@ -22,8 +22,6 @@ export default function HomePage() {
   const [filterPill, setFilterPill] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [alertVisible, setAlertVisible] = useState(true);
-  const [connBarMsg, setConnBarMsg] = useState('');
-  const wasOnlineRef = useRef(isOnline);
 
   /**
    * avgHistory — element-wise average of all lamps' rolling histories.
@@ -50,15 +48,9 @@ export default function HomePage() {
 
   // (Theme effect now lives in SimulationContext so it persists across nav.)
 
-  // Connection status bar
-  useEffect(() => {
-    if (wasOnlineRef.current !== isOnline) {
-      setConnBarMsg(isOnline ? 'ESP32 Connected — Live data active' : 'Hardware offline — showing simulation data');
-      const t = setTimeout(() => setConnBarMsg(''), 4000);
-      wasOnlineRef.current = isOnline;
-      return () => clearTimeout(t);
-    }
-  }, [isOnline]);
+  const connBarMsg = isOnline
+    ? 'ESP32 Connected — Live data active'
+    : 'Hardware offline — no live data';
 
   const firstFault = alertLog.find(a => a.type === 'fault');
   const firstWarn = alertLog.find(a => a.type === 'warn');
@@ -274,7 +266,7 @@ export default function HomePage() {
 
           {/* GPS */}
           <div className="sensor-panel sensor-panel-gps">
-            <GpsCard />
+            <GpsCard connected={arduinoConnected} />
           </div>
         </div>
 
@@ -313,11 +305,22 @@ export default function HomePage() {
           <div className="lamp-grid">
             {filteredLamps.map(lamp => {
               const Icon = STATUS_ICONS[lamp.status] || Lightbulb;
-              const bc = lamp.status === 'ok' ? 'badge-ok'
-                : lamp.status === 'fault' ? 'badge-fault'
-                  : lamp.status === 'warn' ? 'badge-warn'
-                    : 'badge-standby';
-              const iconColor = STATUS_COLORS[lamp.status] || 'var(--ink2)';
+              const ldrLevel = (lamp.ldr || 0) < LDR_BULB_THRESHOLD
+                ? 'low'
+                : (lamp.ldr || 0) < 35
+                  ? 'medium'
+                  : 'high';
+              const bc = ldrLevel === 'low'
+                ? 'badge-fault'
+                : ldrLevel === 'medium'
+                  ? 'badge-warn'
+                  : 'badge-ok';
+              const iconColor = ldrLevel === 'low'
+                ? 'var(--red)'
+                : ldrLevel === 'medium'
+                  ? 'var(--amber)'
+                  : 'var(--green)';
+              const ldrLabel = ldrLevel === 'low' ? 'LOW' : ldrLevel === 'medium' ? 'MED' : 'HIGH';
               return (
                 <div
                   key={lamp.id}
@@ -333,7 +336,7 @@ export default function HomePage() {
                   </span>
                   <div className="lamp-card-body">
                     <div className="lamp-num">LAMP {String(lamp.id).padStart(2, '0')}</div>
-                    <span className={`lamp-status-badge ${bc}`}>{STATUS_LABELS[lamp.status]}</span>
+                    <span className={`lamp-status-badge ${bc}`}>{ldrLabel}</span>
                     <div className="lamp-stat">
                       I:{' '}
                       <SensorValue
@@ -345,7 +348,13 @@ export default function HomePage() {
                       />
                     </div>
                     <div className="lamp-stat">
-                      LDR: <SensorValue value={lamp.ldr} connected={showLive} unit="%" />
+                      LDR:{' '}
+                      <SensorValue
+                        value={lamp.ldr}
+                        connected={showLive}
+                        unit="%"
+                        style={{ color: iconColor }}
+                      />
                     </div>
                     <div className="lamp-stat">
                       Temp: <SensorValue value={lamp.temp} connected={showLive} unit="°C" />
@@ -483,19 +492,22 @@ function FaultStatusCard({ lamps, connected, showPir }) {
   const warnLamp = lamps.find(l => l.status === 'warn');
   const primary = faultLamp || warnLamp;
 
-  const color = faultLamp ? 'var(--red)' : warnLamp ? 'var(--amber)' : 'var(--green)';
-  const badgeBg = faultLamp ? 'var(--red-light)' : warnLamp ? 'var(--amber-light)' : 'var(--green-light)';
-  const badgeLabel = faultLamp ? 'FAULT' : warnLamp ? 'WASTAGE' : 'NORMAL';
-  const arcOffset = faultLamp ? 200 : warnLamp ? 120 : 30;
-  const StatusIcon = faultLamp ? AlertTriangle : warnLamp ? Zap : CheckCircle2;
-  const label = faultLamp ? 'Fused Bulb' : warnLamp ? 'Ghost / Wastage' : 'All Working';
-  const desc = faultLamp
-    ? `Current ON (${faultLamp.current?.toFixed(2)}A) but bulb is dark (LDR=${faultLamp.ldr}%).\nLamp #${faultLamp.id} — bulb fused, replace immediately.`
+  const sampleLamp = primary || lamps[0];
+  const ldrValue = sampleLamp?.ldr ?? 0;
+  const brightnessFault = ldrValue <= 0 || ldrValue < LDR_BULB_THRESHOLD;
+
+  const hasFault = Boolean(faultLamp) || brightnessFault;
+  const color = hasFault ? 'var(--red)' : warnLamp ? 'var(--amber)' : 'var(--green)';
+  const badgeBg = hasFault ? 'var(--red-light)' : warnLamp ? 'var(--amber-light)' : 'var(--green-light)';
+  const badgeLabel = hasFault ? 'FAULT' : warnLamp ? 'WASTAGE' : 'NORMAL';
+  const arcOffset = hasFault ? 200 : warnLamp ? 120 : 30;
+  const StatusIcon = hasFault ? AlertTriangle : warnLamp ? Zap : CheckCircle2;
+  const label = hasFault ? 'Low Brightness' : warnLamp ? 'Ghost / Wastage' : 'All Working';
+  const desc = hasFault
+    ? `LDR below ${LDR_BULB_THRESHOLD}% — bulb light is too low.\nLamp #${sampleLamp?.id ?? '--'} needs attention.`
     : warnLamp
       ? `Bulb lit (LDR=${warnLamp.ldr}%) but relay is OFF.\nLamp #${warnLamp.id} — possible ghost illumination.`
       : lamps.length ? 'All lamps operating normally.\nNo faults detected.' : 'No lamps connected yet.';
-
-  const sampleLamp = primary || lamps[0];
 
   return (
     <div className="card">
@@ -606,13 +618,25 @@ function MotionCard({ motionActive, movingLamps, connected, icon }) {
  * (This card is independent of the Arduino — geolocation comes from the
  * browser, so it stays live even when hardware is offline.)
  */
-function GpsCard() {
-  const [geoState, setGeoState] = useState('idle');   // 'idle' | 'success' | 'denied'
+function GpsCard({ connected }) {
+  const [geoState, setGeoState] = useState('idle');   // 'idle' | 'success' | 'denied' | 'disabled' | 'fallback'
   const [position, setPosition] = useState(null);
+  const fallbackPosition = {
+    lat: 23.177362,
+    lng: 80.024325,
+    accuracy: null,
+    altitude: null,
+  };
 
   useEffect(() => {
+    if (!connected) {
+      setGeoState('disabled');
+      setPosition(null);
+      return;
+    }
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
-      setGeoState('denied');
+      setGeoState('fallback');
+      setPosition(fallbackPosition);
       return;
     }
     navigator.geolocation.getCurrentPosition(
@@ -625,20 +649,41 @@ function GpsCard() {
         });
         setGeoState('success');
       },
-      () => setGeoState('denied'),
+      () => {
+        setGeoState('fallback');
+        setPosition(fallbackPosition);
+      },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
     );
-  }, []);
+  }, [connected]);
 
   return (
     <div className="card">
       <div className="card-head">
         <span className="card-title">Your Location</span>
         <span className="card-badge" style={{
-          background: geoState === 'success' ? 'var(--green-light)' : geoState === 'denied' ? 'var(--red-light)' : 'var(--blue-light)',
-          color: geoState === 'success' ? 'var(--green)' : geoState === 'denied' ? 'var(--red)' : 'var(--blue)',
+          background: geoState === 'success'
+            ? 'var(--green-light)'
+            : geoState === 'denied'
+              ? 'var(--red-light)'
+              : geoState === 'disabled'
+                ? 'var(--cream2)'
+                : 'var(--blue-light)',
+          color: geoState === 'success'
+            ? 'var(--green)'
+            : geoState === 'denied'
+              ? 'var(--red)'
+              : geoState === 'disabled'
+                ? 'var(--ink3)'
+                : 'var(--blue)',
         }}>
-          {geoState === 'success' ? 'LIVE GPS' : geoState === 'denied' ? 'DENIED' : 'ACQUIRING…'}
+          {geoState === 'success'
+            ? 'LIVE GPS'
+            : geoState === 'denied'
+              ? 'DENIED'
+              : geoState === 'disabled'
+                ? 'OFFLINE'
+                : 'ACQUIRING…'}
         </span>
       </div>
 
@@ -647,6 +692,8 @@ function GpsCard() {
           background: geoState === 'success'
             ? 'linear-gradient(135deg, var(--blue-light), var(--cream2))'
             : 'var(--cream2)',
+          opacity: geoState === 'disabled' ? 0.45 : 1,
+          filter: geoState === 'disabled' ? 'grayscale(1)' : 'none',
         }}>
           <div className="gps-map-grid"></div>
 
@@ -670,7 +717,7 @@ function GpsCard() {
             alignItems: 'center',
             justifyContent: 'center',
           }}>
-            {geoState === 'denied'
+            {geoState === 'denied' || geoState === 'disabled'
               ? <MapPinOff size={26} aria-hidden="true" />
               : <MapPin size={26} aria-hidden="true" />}
           </div>
@@ -680,6 +727,20 @@ function GpsCard() {
           <div style={{ textAlign: 'center', padding: '8px 0', color: 'var(--ink3)', fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: '6px', justifyContent: 'center', width: '100%' }}>
             <Hourglass size={12} className="icon-inline" aria-hidden="true" />
             Requesting location permission…
+          </div>
+        )}
+
+        {geoState === 'disabled' && (
+          <div style={{
+            background: 'var(--cream2)', border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-xs)', padding: '10px 12px',
+            fontSize: '12px', color: 'var(--ink3)', marginBottom: '8px', lineHeight: 1.5,
+            display: 'flex', alignItems: 'flex-start', gap: '8px',
+          }}>
+            <MapPinOff size={14} className="icon-inline" aria-hidden="true" />
+            <div>
+              GPS is unavailable while Arduino is offline.
+            </div>
           </div>
         )}
 

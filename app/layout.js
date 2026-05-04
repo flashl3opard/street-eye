@@ -9,7 +9,6 @@
 import './globals.css';
 import Script from 'next/script';
 import { SimulationProvider } from '../context/SimulationContext';
-import ConnectionGate from '../components/ConnectionGate';
 import Sidebar from '../components/Sidebar';
 import Topbar from '../components/Topbar';
 import SidebarBackdrop from '../components/SidebarBackdrop';
@@ -68,8 +67,6 @@ export default function RootLayout({ children }) {
               {children}
             </div>
           </div>
-          {/* Global "Arduino Not Connected" dialog gate — mounted once. */}
-          <ConnectionGate />
         </SimulationProvider>
       </body>
     </html>

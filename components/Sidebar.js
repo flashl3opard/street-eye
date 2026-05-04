@@ -11,7 +11,6 @@ import {
   TrendingUp,
   Settings,
   Flashlight,
-  Cpu,
 } from 'lucide-react';
 import { useSimulation } from '../context/SimulationContext';
 
@@ -94,10 +93,6 @@ export default function Sidebar() {
           <Link href="/settings" className={`nav-item ${isActive('/settings') ? 'active' : ''}`}>
             <span className="nav-icon icon-inline"><Settings {...NAV_ICON_PROPS} /></span>
             Settings
-          </Link>
-          <Link href="/config" className={`nav-item ${isActive('/config') ? 'active' : ''}`}>
-            <span className="nav-icon icon-inline"><Cpu {...NAV_ICON_PROPS} /></span>
-            Hardware Config
           </Link>
         </div>
       </nav>

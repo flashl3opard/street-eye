@@ -46,7 +46,11 @@ export default function LampDetailPage() {
   const statusLabel = STATUS_LABELS[lamp.status] || lamp.status;
   const StatusIcon = STATUS_ICONS[lamp.status] || Lightbulb;
   const lampAlerts = alertLog.filter(a => a.title?.includes(`#${lampId}`));
-  const allLampsForMap = lamps;
+  const fixedLocation = { lat: 23.177362, lng: 80.024325 };
+  const allLampsForMap = lamps.map(l => (l.id === lampId
+    ? { ...l, lat: fixedLocation.lat, lng: fixedLocation.lng }
+    : l));
+  const mapLamp = allLampsForMap.find(l => l.id === lampId) || lamp;
 
   return (
     <main className="content">
@@ -174,7 +178,7 @@ export default function LampDetailPage() {
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             <span className="card-badge" style={{ background: 'var(--blue-light)', color: 'var(--blue)' }}>NEO-6M GPS</span>
             <a
-              href={`https://www.google.com/maps?q=${lamp.lat},${lamp.lng}`}
+              href={`https://www.google.com/maps?q=${fixedLocation.lat},${fixedLocation.lng}`}
               target="_blank" rel="noopener noreferrer"
               className="gps-maps-link"
               style={{ padding: '4px 10px', marginTop: 0, fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
@@ -196,8 +200,8 @@ export default function LampDetailPage() {
                 Altitude / satellite-count were previously hardcoded fakes. */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: '1px', background: 'var(--border)', borderTop: '1px solid var(--border)' }}>
           {[
-            { k: 'Latitude', v: `${lamp.lat?.toFixed(6)}° N` },
-            { k: 'Longitude', v: `${lamp.lng?.toFixed(6)}° E` },
+            { k: 'Latitude', v: `${mapLamp.lat?.toFixed(6)}° N` },
+            { k: 'Longitude', v: `${mapLamp.lng?.toFixed(6)}° E` },
           ].map(row => (
             <div key={row.k} style={{ background: 'var(--white)', padding: '12px 16px' }}>
               <div style={{ fontSize: '10px', color: 'var(--ink3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' }}>{row.k}</div>

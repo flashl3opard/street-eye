@@ -3,9 +3,9 @@ import { Sliders } from 'lucide-react';
 import { useHardwareData } from '../../components/useHardwareData';
 
 const MODES = [
-    { key: 'low', label: 'Low', range: '3-8' },
-    { key: 'medium', label: 'Medium', range: '14-21' },
-    { key: 'high', label: 'High', range: '31-41' },
+    { key: 'low', label: 'Low', range: '0-15' },
+    { key: 'medium', label: 'Medium', range: '35-49' },
+    { key: 'high', label: 'High', range: '71-88' },
 ];
 
 function formatMode(mode) {

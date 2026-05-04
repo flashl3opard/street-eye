@@ -17,7 +17,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   DEFAULT_DATA_URL, POLL_INTERVAL_MS,
-  SIMULATED_READINGS, mergeLampData,
+  SIMULATED_READINGS, mergeLampData, LDR_BULB_THRESHOLD,
 } from '../lib/lampData';
 import {
   appendLog,
@@ -55,9 +55,9 @@ const FORCE_CONNECTED_DEFAULTS = {
 };
 
 const LDR_OVERRIDE_RANGES = {
-  low: [3, 8],
-  medium: [14, 21],
-  high: [31, 41],
+  low: [0, 15],
+  medium: [35, 49],
+  high: [71, 88],
 };
 
 const CURRENT_OVERRIDE_RANGE = [2.8, 3.7];
@@ -372,14 +372,18 @@ export function SimulationProvider({ children }) {
       /* Alert log — detect status changes */
       finalLamps.forEach(lamp => {
         const prev = prevLampsRef.current.find(p => p.id === lamp.id);
-        if (prev && prev.status !== lamp.status) {
+        const prevLdr = prev?.ldr ?? 0;
+        const nowLow = lamp.ldr < LDR_BULB_THRESHOLD;
+        const wasLow = prevLdr < LDR_BULB_THRESHOLD;
+
+        if (nowLow && !wasLow) {
           recordEvent({
-            type: lamp.status,
-            title: `${lamp.status.toUpperCase()} — Lamp #${lamp.id} (${lamp.label})`,
-            msg: `Status changed: ${prev.status} → ${lamp.status}. I=${lamp.current?.toFixed(2)}A, LDR=${lamp.ldr}%`,
+            type: 'fault',
+            title: `LOW BRIGHTNESS — Lamp #${lamp.id} (${lamp.label})`,
+            msg: `LDR below ${LDR_BULB_THRESHOLD}% (LDR=${lamp.ldr}%). Brightness issue detected.`,
             lampId: lamp.id,
             lampLabel: lamp.label,
-            category: 'lamp-status',
+            category: 'lamp-brightness',
             source: 'hardware',
           });
         }
