@@ -1,5 +1,5 @@
 'use client';
-import { Sliders } from 'lucide-react';
+import { Sliders, CircleDot } from 'lucide-react';
 import { useHardwareData } from '../../components/useHardwareData';
 
 const MODES = [
@@ -19,6 +19,8 @@ export default function AdminPage() {
         updateLdrOverrideMode,
         forceConnected,
         updateForceConnected,
+        pirOverrideActive,
+        triggerPirOverride,
     } = useHardwareData();
 
     const setMode = (mode) => {
@@ -122,6 +124,40 @@ export default function AdminPage() {
                             Off
                         </button>
                     </div>
+                </div>
+            </div>
+
+            <div className="card" style={{ maxWidth: '640px', marginTop: '16px' }}>
+                <div className="card-head">
+                    <span className="card-title">PIR Motion Trigger</span>
+                    <span className="card-badge" style={{ background: pirOverrideActive ? 'var(--amber-light)' : 'var(--cream2)', color: pirOverrideActive ? 'var(--amber-dark)' : 'var(--ink3)' }}>
+                        {pirOverrideActive ? 'IN MOTION' : 'READY'}
+                    </span>
+                </div>
+                <div className="card-body">
+                    <div style={{ fontSize: '12px', color: 'var(--ink3)', marginBottom: '12px' }}>
+                        Force the PIR sensor to report motion for 5 seconds.
+                    </div>
+                    <button
+                        type="button"
+                        onClick={triggerPirOverride}
+                        style={{
+                            padding: '10px 16px',
+                            borderRadius: 'var(--radius-xs)',
+                            border: `1.5px solid ${pirOverrideActive ? 'var(--amber)' : 'var(--border)'}`,
+                            background: pirOverrideActive ? 'var(--amber-light)' : 'var(--cream2)',
+                            color: 'var(--ink)',
+                            fontWeight: pirOverrideActive ? 700 : 500,
+                            fontSize: '13px',
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                        }}
+                    >
+                        <CircleDot size={14} aria-hidden="true" />
+                        Trigger Motion (5s)
+                    </button>
                 </div>
             </div>
         </main>

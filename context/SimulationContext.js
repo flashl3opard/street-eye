@@ -54,6 +54,8 @@ const FORCE_CONNECTED_DEFAULTS = {
   mode: 'off',
 };
 
+const PIR_OVERRIDE_DURATION_MS = 5000;
+
 const LDR_OVERRIDE_RANGES = {
   low: [0, 15],
   medium: [35, 49],
@@ -183,14 +185,48 @@ export function SimulationProvider({ children }) {
     }
   }, []);
 
+  const [pirOverrideActive, setPirOverrideActive] = useState(false);
+  const pirOverrideTimerRef = useRef(null);
+  const pirTriggerAtRef = useRef(0);
+
+  const triggerPirOverride = useCallback((options = {}) => {
+    const { broadcast = true } = options;
+    const firedAt = Date.now();
+    pirTriggerAtRef.current = firedAt;
+    setPirOverrideActive(true);
+    if (pirOverrideTimerRef.current) {
+      clearTimeout(pirOverrideTimerRef.current);
+    }
+    pirOverrideTimerRef.current = setTimeout(() => {
+      setPirOverrideActive(false);
+      pirOverrideTimerRef.current = null;
+    }, PIR_OVERRIDE_DURATION_MS);
+
+    if (broadcast && isFirebaseReady()) {
+      updateAdminSettings({ pirTriggerAt: firedAt });
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (pirOverrideTimerRef.current) {
+        clearTimeout(pirOverrideTimerRef.current);
+      }
+    };
+  }, []);
+
   useEffect(() => {
     if (!isFirebaseReady()) return undefined;
 
     return subscribeToAdminSettings((settings) => {
       if (settings.ldrOverrideMode) setLdrOverrideMode(settings.ldrOverrideMode);
       if (settings.forceConnected) setForceConnected(settings.forceConnected);
+      if (settings.pirTriggerAt && settings.pirTriggerAt > pirTriggerAtRef.current) {
+        pirTriggerAtRef.current = settings.pirTriggerAt;
+        triggerPirOverride({ broadcast: false });
+      }
     });
-  }, []);
+  }, [triggerPirOverride]);
 
   /**
    * Theme state — lives at the provider level so it survives navigation.
@@ -561,6 +597,8 @@ export function SimulationProvider({ children }) {
     updateLdrOverrideMode,
     forceConnected,
     updateForceConnected,
+    pirOverrideActive,
+    triggerPirOverride,
     hardwareMeta,
     sidebarOpen,
     toggleSidebar,

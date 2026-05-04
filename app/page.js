@@ -18,6 +18,7 @@ export default function HomePage() {
     lamps, espId, isOnline, alertLog, eventLog,
     simulating, kpi, lampHistories, lampLdrHistories,
     bootState, arduinoConnected, componentConfig,
+    pirOverrideActive,
   } = useHardwareData();
   const [filterPill, setFilterPill] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
@@ -90,7 +91,13 @@ export default function HomePage() {
   const darkLamps = lamps.filter(l => (l.ldr || 0) < LDR_BULB_THRESHOLD).length;
   const brightLamps = lamps.filter(l => (l.ldr || 0) >= LDR_BULB_THRESHOLD).length;
   const movingLamps = lamps.filter(l => l.pir);
-  const motionActive = movingLamps.length > 0;
+  const overrideLamps = pirOverrideActive
+    ? (lamps.length
+      ? lamps.slice(0, Math.min(2, lamps.length)).map(l => ({ ...l, pir: true }))
+      : [{ id: '--', pir: true }])
+    : null;
+  const motionActive = movingLamps.length > 0 || pirOverrideActive;
+  const motionConnected = showLive || pirOverrideActive;
 
   return (
     <>
@@ -98,9 +105,9 @@ export default function HomePage() {
         {/* Page header */}
         <div className="page-header">
           <div>
-            <div className="page-eyebrow">
-              {espId
-                ? `ESP32 Node: ${espId}`
+            <div className="page-eyebrow" style={arduinoConnected ? { color: 'var(--green)' } : undefined}>
+              {arduinoConnected
+                ? 'ESP Connected'
                 : isBooting ? 'Connecting to ESP32…' : 'Waiting for ESP32...'}
             </div>
             <h1 className="page-title">Streetlamp <em>Overview</em></h1>
@@ -257,8 +264,8 @@ export default function HomePage() {
             <div className="card sensor-panel sensor-panel-motion">
               <MotionCard
                 motionActive={motionActive}
-                movingLamps={movingLamps}
-                connected={showLive}
+                movingLamps={overrideLamps || movingLamps}
+                connected={motionConnected}
                 icon={<CircleDot size={18} aria-hidden="true" />}
               />
             </div>
