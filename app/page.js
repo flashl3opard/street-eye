@@ -107,7 +107,7 @@ export default function HomePage() {
           <div>
             <div className="page-eyebrow" style={arduinoConnected ? { color: 'var(--green)' } : undefined}>
               {arduinoConnected
-                ? 'ESP Connected'
+                ? `ESP Connected — ${espId || 'ESP32_01'}`
                 : isBooting ? 'Connecting to ESP32…' : 'Waiting for ESP32...'}
             </div>
             <h1 className="page-title">Streetlamp <em>Overview</em></h1>

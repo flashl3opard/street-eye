@@ -409,14 +409,14 @@ export function SimulationProvider({ children }) {
       finalLamps.forEach(lamp => {
         const prev = prevLampsRef.current.find(p => p.id === lamp.id);
         const prevLdr = prev?.ldr ?? 0;
-        const nowLow = lamp.ldr < LDR_BULB_THRESHOLD;
-        const wasLow = prevLdr < LDR_BULB_THRESHOLD;
+        const nowLow = lamp.ldr < 10;
+        const wasLow = prevLdr < 10;
 
         if (nowLow && !wasLow) {
           recordEvent({
             type: 'fault',
             title: `LOW BRIGHTNESS — Lamp #${lamp.id} (${lamp.label})`,
-            msg: `LDR below ${LDR_BULB_THRESHOLD}% (LDR=${lamp.ldr}%). Brightness issue detected.`,
+            msg: `LDR below 10% (LDR=${lamp.ldr}%). Brightness issue detected.`,
             lampId: lamp.id,
             lampLabel: lamp.label,
             category: 'lamp-brightness',
